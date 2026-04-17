@@ -74,3 +74,27 @@ def test_prepare_publish_bundle_commits_dashboard_and_report_before_manifest() -
     assert report["narrative_sections"]["override_summary"][
         "override_applied_count"
     ] == 1
+
+
+def test_formal_report_uses_reserved_manifest_ref_in_committed_payload() -> None:
+    manifest_ref = "pg://cycle_publish_manifest/cycle_l8/v42"
+    publish_port = RecordingPublishPort(manifest_ref=manifest_ref)
+
+    bundle = prepare_publish_bundle(
+        "cycle_l8",
+        source=FakeFormalObjectSource(),
+        publish_port=publish_port,
+    )
+    payload = bundle.model_dump(mode="json")
+    report_commit_payload = next(
+        commit_payload
+        for _, object_key, commit_payload in publish_port.commit_calls
+        if object_key == FORMAL_REPORT_KEY
+    )
+
+    assert publish_port.reserve_manifest_ref_calls == ["cycle_l8"]
+    assert payload["manifest_candidate"]["manifest_ref"] == manifest_ref
+    assert payload["formal_objects"][FORMAL_REPORT_KEY]["payload"]["appendix_refs"][
+        "manifest_ref"
+    ] == manifest_ref
+    assert report_commit_payload["appendix_refs"]["manifest_ref"] == manifest_ref

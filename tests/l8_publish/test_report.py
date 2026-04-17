@@ -49,6 +49,15 @@ def test_build_formal_report_rejects_missing_ref() -> None:
         build_formal_report("cycle_l8", bundle)
 
 
+def test_build_formal_report_rejects_missing_manifest_ref() -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["manifest_candidate"].pop("manifest_ref")
+    )
+
+    with pytest.raises(ManifestPublishError, match="manifest_ref"):
+        build_formal_report("cycle_l8", bundle)
+
+
 def test_build_formal_report_rejects_cycle_mismatch() -> None:
     bundle = _mutated_bundle(
         lambda payload: payload.__setitem__("cycle_id", "cycle_other")

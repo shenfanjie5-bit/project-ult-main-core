@@ -144,7 +144,9 @@ def _manifest_ref(cycle_id: CycleId, bundle: PublishBundle) -> str:
     if isinstance(manifest_ref, str) and manifest_ref:
         _ensure_ref_points_to_cycle("manifest_ref", manifest_ref, cycle_id)
         return manifest_ref
-    return f"manifest/{cycle_id}"
+    raise ManifestPublishError(
+        "manifest_candidate.manifest_ref must be reserved before formal report build",
+    )
 
 
 def _audit_payload_ref(cycle_id: CycleId, bundle: PublishBundle) -> str:

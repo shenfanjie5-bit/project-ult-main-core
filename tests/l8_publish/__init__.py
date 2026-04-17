@@ -147,13 +147,24 @@ class RecordingPublishPort:
         *,
         fail_on_object_key: str | None = None,
         fail_manifest: bool = False,
+        manifest_ref: str | None = None,
     ) -> None:
         self.fail_on_object_key = fail_on_object_key
         self.fail_manifest = fail_manifest
+        self.manifest_ref = manifest_ref
         self.commit_calls: list[tuple[CycleId, str, Mapping[str, Any]]] = []
         self.manifest_calls: list[
             tuple[CycleId, tuple[CommittedFormalObject, ...]]
         ] = []
+        self.reserve_manifest_ref_calls: list[CycleId] = []
+
+    def reserve_cycle_manifest_ref(
+        self,
+        *,
+        cycle_id: CycleId,
+    ) -> str:
+        self.reserve_manifest_ref_calls.append(cycle_id)
+        return self.manifest_ref or f"manifest/{cycle_id}"
 
     def commit_formal_object(
         self,
@@ -185,7 +196,7 @@ class RecordingPublishPort:
         if self.fail_manifest:
             raise RuntimeError("manifest write failed")
         return ManifestWriteResult(
-            manifest_ref=f"manifest/{cycle_id}",
+            manifest_ref=self.manifest_ref or f"manifest/{cycle_id}",
             manifest_version="v1",
             table_snapshots={
                 committed.object_key: committed.snapshot_id

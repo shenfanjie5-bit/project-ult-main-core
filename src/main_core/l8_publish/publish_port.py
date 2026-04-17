@@ -58,6 +58,13 @@ class FormalObjectSource(Protocol):
 class DataPlatformPublishPort(Protocol):
     """Manifest-backed formal object publication boundary."""
 
+    def reserve_cycle_manifest_ref(
+        self,
+        *,
+        cycle_id: CycleId,
+    ) -> str:
+        """Reserve the exact manifest ref that write_cycle_manifest will publish."""
+
     def commit_formal_object(
         self,
         *,

@@ -87,11 +87,17 @@ def prepare_publish_bundle(
 
     requested_cycle_id = CycleId(str(cycle_id))
     formal_objects = collect_formal_objects(requested_cycle_id, source)
+    reserved_manifest_ref = (
+        _reserve_cycle_manifest_ref(requested_cycle_id, publish_port)
+        if derived_builders
+        else None
+    )
     formal_objects, committed_objects = _commit_with_derived_builders(
         cycle_id=requested_cycle_id,
         formal_objects=formal_objects,
         publish_port=publish_port,
         derived_builders=derived_builders,
+        reserved_manifest_ref=reserved_manifest_ref,
     )
 
     manifest = write_manifest_after_commits(
@@ -99,6 +105,13 @@ def prepare_publish_bundle(
         committed_objects,
         publish_port,
     )
+    if (
+        reserved_manifest_ref is not None
+        and manifest.manifest_ref != reserved_manifest_ref
+    ):
+        raise ManifestPublishError(
+            "manifest write result must match reserved manifest_ref",
+        )
     bundle_formal_objects = _build_bundle_formal_objects(
         formal_objects,
         committed_objects,
@@ -132,6 +145,7 @@ def _commit_with_derived_builders(
     formal_objects: Mapping[str, FormalObjectValue],
     publish_port: DataPlatformPublishPort,
     derived_builders: Sequence[DerivedFormalObjectBuilder],
+    reserved_manifest_ref: str | None,
 ) -> tuple[dict[str, FormalObjectValue], tuple[CommittedFormalObject, ...]]:
     active_formal_objects = dict(formal_objects)
     if not derived_builders:
@@ -154,10 +168,13 @@ def _commit_with_derived_builders(
             active_formal_objects,
             committed_objects,
         )
+        manifest_candidate = build_manifest_candidate(cycle_id, committed_objects)
+        if reserved_manifest_ref is not None:
+            manifest_candidate["manifest_ref"] = reserved_manifest_ref
         draft_bundle = PublishBundle(
             cycle_id=cycle_id,
             formal_objects=bundle_formal_objects,
-            manifest_candidate=build_manifest_candidate(cycle_id, committed_objects),
+            manifest_candidate=manifest_candidate,
             audit_payload={
                 "cycle_id": str(cycle_id),
                 "audit_payload_ref": f"audit_payload/{cycle_id}",
@@ -192,6 +209,29 @@ def _commit_with_derived_builders(
         )
 
     return active_formal_objects, tuple(committed_objects)
+
+
+def _reserve_cycle_manifest_ref(
+    cycle_id: CycleId,
+    publish_port: DataPlatformPublishPort,
+) -> str:
+    try:
+        reserve_manifest_ref = publish_port.reserve_cycle_manifest_ref
+    except AttributeError as exc:
+        raise ManifestPublishError(
+            "publish port must reserve manifest_ref before derived formal objects",
+        ) from exc
+
+    try:
+        manifest_ref = reserve_manifest_ref(cycle_id=cycle_id)
+    except ManifestPublishError:
+        raise
+    except Exception as exc:
+        raise ManifestPublishError("failed to reserve cycle manifest_ref") from exc
+
+    if not isinstance(manifest_ref, str) or not manifest_ref.strip():
+        raise ManifestPublishError("reserved manifest_ref must be non-empty")
+    return manifest_ref
 
 
 def _validate_formal_object_cycles(

@@ -95,6 +95,7 @@ def _override(
     action_type: str,
     *,
     cycle_id: str = "cycle_l7",
+    submitted_at: datetime | None = None,
 ) -> OverrideRecord:
     return OverrideRecord(
         cycle_id=cycle_id,
@@ -102,7 +103,7 @@ def _override(
         submitted_by="analyst",
         action_type=action_type,
         rationale="human override",
-        submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        submitted_at=submitted_at or datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
     )
 
 
@@ -252,6 +253,69 @@ def test_submit_override_default_store_feeds_recommendation_generation(
     assert recommendation.triggered_by == "human_decision"
     assert recommendation.override_applied is True
     assert recommendation.constraints_applied["regime_gate"] == "risk_off_buy_to_hold"
+
+
+def test_submit_override_default_store_latest_matching_submission_wins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_store = InMemoryOverrideStore()
+    monkeypatch.setattr(
+        "main_core.l7_recommendation.override._DEFAULT_OVERRIDE_STORE",
+        default_store,
+    )
+    pool = _pool(("ENT_A",))
+
+    submit_override(
+        _override(
+            "ENT_A",
+            "buy",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        ),
+    )
+    submit_override(
+        _override(
+            "ENT_A",
+            "reduce",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC),
+        ),
+    )
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.5)],
+        _world_state("risk_off"),
+    )
+
+    assert recommendation.action_type == "reduce"
+    assert recommendation.rating == "C"
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
+    assert "regime_gate" not in recommendation.constraints_applied
+
+
+def test_generate_recommendations_honors_explicit_falsey_override_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FalseyOverrideStore(InMemoryOverrideStore):
+        def __len__(self) -> int:
+            return 0
+
+    default_store = InMemoryOverrideStore([_override("ENT_A", "buy")])
+    monkeypatch.setattr(
+        "main_core.l7_recommendation.override._DEFAULT_OVERRIDE_STORE",
+        default_store,
+    )
+    pool = _pool(("ENT_A",))
+
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.5)],
+        _world_state(),
+        override_store=FalseyOverrideStore(),
+    )
+
+    assert recommendation.action_type == "hold"
+    assert recommendation.triggered_by == "system"
+    assert recommendation.override_applied is False
 
 
 def test_generate_recommendations_force_inconclusive_passes_schema_validation() -> None:

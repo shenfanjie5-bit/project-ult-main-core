@@ -79,14 +79,27 @@ def _resolve_overrides(
     override_store: OverrideStore | None,
 ) -> tuple[OverrideRecord, ...]:
     if overrides is not None:
-        return tuple(overrides)
+        return _latest_overrides_by_cycle_entity(overrides)
 
-    active_store = override_store or _default_override_store()
-    return tuple(
-        override
-        for override in active_store.list_overrides()
-        if override.cycle_id == pool.cycle_id
+    active_store = (
+        override_store if override_store is not None else _default_override_store()
     )
+    return _latest_overrides_by_cycle_entity(
+        tuple(
+            override
+            for override in active_store.list_overrides()
+            if override.cycle_id == pool.cycle_id
+        ),
+    )
+
+
+def _latest_overrides_by_cycle_entity(
+    overrides: Sequence[OverrideRecord],
+) -> tuple[OverrideRecord, ...]:
+    latest_by_key: dict[tuple[str, str], OverrideRecord] = {}
+    for override in overrides:
+        latest_by_key[(str(override.cycle_id), str(override.entity_id))] = override
+    return tuple(latest_by_key.values())
 
 
 def _default_override_store() -> OverrideStore:

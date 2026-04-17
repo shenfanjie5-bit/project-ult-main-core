@@ -7,6 +7,7 @@ from importlib import import_module
 from os import environ
 from typing import Any
 
+from main_core.common.protocols import GraphEnginePort
 from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis.models import MarketBar
@@ -23,11 +24,7 @@ from main_core.l3_features.feature_math import (
     apply_feature_weight_multiplier,
     market_bar_feature_values,
 )
-from main_core.l3_features.graph_adapter import (
-    GraphEnginePort,
-    load_graph_features,
-    merge_graph_features,
-)
+from main_core.l3_features.graph_adapter import load_graph_features, merge_graph_features
 from main_core.l3_features.multiplier_store import MultiplierStore
 from main_core.l3_features.weight_api import get_feature_weight_multiplier
 

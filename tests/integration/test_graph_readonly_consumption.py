@@ -7,14 +7,11 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from main_core.common.contexts import WorldStateInputs
+from main_core.common.protocols import GraphImpactRecord, GraphRegimeContext
 from main_core.common.schemas import WorldStateSnapshot
 from main_core.common.types import CycleId, EntityId, Regime
 from main_core.l1_l2_basis import EntityMasterRow, MarketBar
-from main_core.l3_features import (
-    GraphImpactRecord,
-    GraphRegimeContext,
-    build_feature_signal_bundles,
-)
+from main_core.l3_features import build_feature_signal_bundles
 from main_core.l4_world_state import StaticWorldStateReasonerPort, derive_world_state
 from main_core.l4_world_state.reasoner_port import WorldStateDeltaDecision
 
@@ -179,4 +176,3 @@ def test_previous_world_state_feeds_readonly_graph_context_into_l3_and_l4() -> N
     }
     assert graph_port.impact_calls == [current_cycle_id]
     assert graph_port.regime_calls == [current_cycle_id]
-

@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from main_core.common.contexts import WorldStateInputs
+from main_core.common.protocols import GraphEnginePort, GraphSnapshotError
 from main_core.common.types import CycleId
-from main_core.l3_features.graph_adapter import GraphEnginePort, GraphSnapshotError
 
 
 def load_graph_regime_context(

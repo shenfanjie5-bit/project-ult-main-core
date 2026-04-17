@@ -6,11 +6,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from main_core.common.protocols import GraphImpactRecord
 from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis import EntityMasterRow, MarketBar
 from main_core.l3_features import (
     CandidateSignalRecord,
-    GraphImpactRecord,
     InMemoryMultiplierStore,
     apply_weight_multiplier,
     build_feature_signal_bundles,

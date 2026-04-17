@@ -8,14 +8,14 @@ from dataclasses import dataclass, field
 import pytest
 
 from main_core.common.contexts import WorldStateInputs
-from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
-from main_core.common.types import CycleId, Regime
-from main_core.l3_features import (
+from main_core.common.protocols import (
     GraphEnginePort,
     GraphImpactRecord,
     GraphRegimeContext,
     GraphSnapshotError,
 )
+from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
+from main_core.common.types import CycleId, Regime
 from main_core.l4_world_state import (
     StaticWorldStateReasonerPort,
     derive_world_state,
@@ -202,4 +202,3 @@ def test_fake_graph_port_only_exposes_read_methods() -> None:
         for name in dir(port)
         if name.startswith(("write_", "commit_", "mutate_"))
     }
-

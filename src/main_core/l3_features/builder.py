@@ -17,17 +17,23 @@ from main_core.l3_features.feature_math import (
     apply_feature_weight_multiplier,
     market_bar_feature_values,
 )
+from main_core.l3_features.graph_adapter import (
+    GraphEnginePort,
+    load_graph_features,
+    merge_graph_features,
+)
 from main_core.l3_features.multiplier_store import MultiplierStore
 from main_core.l3_features.weight_api import get_feature_weight_multiplier
 
 _DATA_PLATFORM_PORT_ENV = "MAIN_CORE_DATA_PLATFORM_PORT"
 
 
-def build_feature_signal_bundle(
+def build_feature_signal_bundle(  # noqa: PLR0913
     cycle_id: CycleId | str,
     *,
     data_port: DataPlatformPort | None = None,
     multiplier_store: MultiplierStore | None = None,
+    graph_engine_port: GraphEnginePort | None = None,
     graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
     candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> FeatureSignalBundle:
@@ -42,6 +48,7 @@ def build_feature_signal_bundle(
         cycle_id,
         data_port=data_port,
         multiplier_store=multiplier_store,
+        graph_engine_port=graph_engine_port,
         graph_impact=graph_impact,
         candidate_signals=candidate_signals,
     )
@@ -55,11 +62,12 @@ def build_feature_signal_bundle(
     )
 
 
-def build_feature_signal_bundles(
+def build_feature_signal_bundles(  # noqa: PLR0913
     cycle_id: CycleId | str,
     *,
     data_port: DataPlatformPort | None = None,
     multiplier_store: MultiplierStore | None = None,
+    graph_engine_port: GraphEnginePort | None = None,
     graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
     candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[FeatureSignalBundle]:
@@ -87,16 +95,25 @@ def build_feature_signal_bundles(
             base_feature_values,
             multipliers,
         )
-        bundles.append(
-            FeatureSignalBundle(
-                cycle_id=cycle_id,
-                entity_id=EntityId(entity_id),
-                feature_values=feature_values,
-                signal_values=dict((candidate_signals or {}).get(entity_id, {})),
-                graph_features=dict((graph_impact or {}).get(entity_id, {})),
-                feature_weight_multiplier=effective_multipliers,
-            )
+        bundle = FeatureSignalBundle(
+            cycle_id=cycle_id,
+            entity_id=EntityId(entity_id),
+            feature_values=feature_values,
+            signal_values=dict((candidate_signals or {}).get(entity_id, {})),
+            graph_features=dict((graph_impact or {}).get(entity_id, {})),
+            feature_weight_multiplier=effective_multipliers,
         )
+        graph_features = load_graph_features(
+            CycleId(str(cycle_id)),
+            EntityId(entity_id),
+            graph_engine_port,
+        )
+        if graph_features:
+            bundle = merge_graph_features(
+                bundle,
+                {**dict(bundle.graph_features), **graph_features},
+            )
+        bundles.append(bundle)
 
     return bundles
 

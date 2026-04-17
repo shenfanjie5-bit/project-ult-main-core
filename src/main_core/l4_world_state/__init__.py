@@ -1,5 +1,9 @@
 """L4 package: shared world-state derivation."""
 
+from main_core.l4_world_state.graph_adapter import (
+    load_graph_regime_context,
+    with_graph_impact,
+)
 from main_core.l4_world_state.reasoner_port import (
     StaticWorldStateReasonerPort,
     WorldStateDeltaDecision,
@@ -14,4 +18,6 @@ __all__ = [
     "WorldStateDeltaDecision",
     "WorldStateReasonerPort",
     "derive_world_state",
+    "load_graph_regime_context",
+    "with_graph_impact",
 ]

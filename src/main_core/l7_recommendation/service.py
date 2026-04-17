@@ -44,12 +44,18 @@ def generate_recommendations(  # noqa: PLR0913
     recommendations: list[RecommendationSnapshot] = []
     for entity_id in pool.selected_entities:
         candidate = _candidate_from_analysis(analysis_by_entity[str(entity_id)])
+        source_is_inconclusive = candidate.action_type == "inconclusive"
         matching_override = find_override(overrides or (), pool.cycle_id, entity_id)
         override_was_applied = matching_override is not None
         if matching_override is not None:
             candidate = apply_override(candidate, matching_override)
+        if source_is_inconclusive:
+            candidate = _force_inconclusive(candidate)
 
         gated_candidate = active_provider.gate(constraint_inputs, candidate)
+        _validate_gated_identity(gated_candidate, pool.cycle_id, entity_id)
+        if source_is_inconclusive:
+            gated_candidate = _force_inconclusive(gated_candidate)
         if override_was_applied and (
             not gated_candidate.override_applied
             or gated_candidate.triggered_by != "human_decision"
@@ -129,6 +135,33 @@ def _candidate_from_analysis(analysis: AlphaResultSnapshot) -> RecommendationSna
         override_applied=False,
         constraints_applied={},
     )
+
+
+def _force_inconclusive(candidate: RecommendationSnapshot) -> RecommendationSnapshot:
+    if (
+        candidate.action_type == "inconclusive"
+        and candidate.rating is None
+        and candidate.confidence is None
+    ):
+        return candidate
+    return candidate.model_copy(
+        update={
+            "action_type": "inconclusive",
+            "rating": None,
+            "confidence": None,
+        },
+    )
+
+
+def _validate_gated_identity(
+    candidate: RecommendationSnapshot,
+    cycle_id: str,
+    entity_id: str,
+) -> None:
+    if candidate.cycle_id != cycle_id:
+        raise MainCoreError("constraint gate must preserve recommendation cycle_id")
+    if candidate.entity_id != entity_id:
+        raise MainCoreError("constraint gate must preserve recommendation entity_id")
 
 
 def _action_for_score(score: float) -> str:

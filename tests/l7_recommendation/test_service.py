@@ -137,6 +137,27 @@ def test_generate_recommendations_passes_inconclusive_through_explicitly() -> No
     assert recommendation.triggered_by == "system"
 
 
+@pytest.mark.parametrize("override_action", ["buy", "hold", "reduce"])
+def test_generate_recommendations_keeps_inconclusive_after_action_override(
+    override_action: str,
+) -> None:
+    pool = _pool(("ENT_A",))
+    analyses = [_analysis("ENT_A", None, status="inconclusive", confidence=0.0)]
+
+    [recommendation] = generate_recommendations(
+        pool,
+        analyses,
+        _world_state(),
+        overrides=[_override("ENT_A", override_action)],
+    )
+
+    assert recommendation.action_type == "inconclusive"
+    assert recommendation.rating is None
+    assert recommendation.confidence is None
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
+
+
 def test_generate_recommendations_rejects_analysis_outside_pool() -> None:
     pool = _pool(("ENT_A",))
 
@@ -249,6 +270,36 @@ def test_generate_recommendations_preserves_override_audit_after_custom_gate() -
     assert recommendation.action_type == "reduce"
     assert recommendation.triggered_by == "human_decision"
     assert recommendation.override_applied is True
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("cycle_id", "cycle_gate_other"),
+        ("entity_id", "ENT_GATE_OTHER"),
+    ],
+)
+def test_generate_recommendations_rejects_constraint_gate_identity_drift(
+    field_name: str,
+    field_value: str,
+) -> None:
+    class DriftingGate:
+        def gate(
+            self,
+            inputs: RecommendationConstraintInputs,
+            candidate: RecommendationSnapshot,
+        ) -> RecommendationSnapshot:
+            return candidate.model_copy(update={field_name: field_value})
+
+    pool = _pool(("ENT_A",))
+
+    with pytest.raises(MainCoreError, match=field_name):
+        generate_recommendations(
+            pool,
+            [_analysis("ENT_A", 0.8)],
+            _world_state(),
+            constraint_provider=DriftingGate(),
+        )
 
 
 def test_generate_recommendations_has_no_previous_recommendation_parameter() -> None:

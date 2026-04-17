@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import date
 from sys import float_info
+from types import ModuleType
 
 import pytest
 
@@ -13,8 +15,10 @@ from main_core.l1_l2_basis import EntityMasterRow, MarketBar
 from main_core.l3_features import (
     InMemoryMultiplierStore,
     InvalidMultiplierError,
+    L3FeatureError,
     apply_weight_multiplier,
     build_feature_signal_bundle,
+    build_feature_signal_bundles,
 )
 from main_core.l3_features.feature_math import (
     apply_feature_weight_multiplier,
@@ -143,7 +147,7 @@ def test_build_feature_signal_bundle_uses_latest_market_bar_and_sorts_by_entity(
         entity_master=(msft, inactive, aapl),
     )
 
-    bundles = build_feature_signal_bundle(
+    bundles = build_feature_signal_bundles(
         cycle_id,
         data_port=port,
         multiplier_store=store,
@@ -185,7 +189,7 @@ def test_build_feature_signal_bundle_defaults_optional_inputs_to_empty_dicts(
         entity_master=(active_entity,),
     )
 
-    bundles = build_feature_signal_bundle(cycle_id, data_port=port)
+    bundles = build_feature_signal_bundles(cycle_id, data_port=port)
 
     assert len(bundles) == 1
     assert bundles[0].cycle_id == cycle_id
@@ -221,7 +225,73 @@ def test_default_multiplier_store_update_is_visible_to_same_cycle_build() -> Non
 
     apply_weight_multiplier(cycle_id, {"close_price": UPDATED_CLOSE_MULTIPLIER})
 
-    bundles = build_feature_signal_bundle(cycle_id, data_port=port)
+    bundles = build_feature_signal_bundles(cycle_id, data_port=port)
 
     assert bundles[0].feature_values["close_price"] == UPDATED_CLOSE_PRICE
     assert bundles[0].feature_weight_multiplier["close_price"] == UPDATED_CLOSE_MULTIPLIER
+
+
+def test_build_feature_signal_bundle_resolves_default_port_and_returns_single_bundle(
+    cycle_id: CycleId,
+    active_entity: EntityMasterRow,
+    market_bar: MarketBar,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    port = FakeDataPlatformPort(
+        market_bars=(market_bar,),
+        entity_master=(active_entity,),
+    )
+    module = ModuleType("fake_l3_data_platform")
+    module.build_port = lambda: port
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setenv("MAIN_CORE_DATA_PLATFORM_PORT", f"{module.__name__}:build_port")
+
+    bundle = build_feature_signal_bundle(cycle_id)
+
+    assert isinstance(bundle, FeatureSignalBundle)
+    assert bundle.cycle_id == cycle_id
+    assert bundle.entity_id == active_entity.entity_id
+    assert port.entity_master_calls == [cycle_id]
+    assert port.market_bar_calls == [cycle_id]
+
+
+def test_build_feature_signal_bundle_rejects_ambiguous_multi_entity_cycle(
+    cycle_id: CycleId,
+) -> None:
+    aapl = EntityMasterRow(
+        entity_id=EntityId("ENT_AAPL"),
+        ticker="AAPL",
+        name="Apple Inc.",
+        exchange="NASDAQ",
+    )
+    msft = EntityMasterRow(
+        entity_id=EntityId("ENT_MSFT"),
+        ticker="MSFT",
+        name="Microsoft Corp.",
+        exchange="NASDAQ",
+    )
+    port = FakeDataPlatformPort(
+        entity_master=(aapl, msft),
+        market_bars=(
+            MarketBar(
+                cycle_id=cycle_id,
+                entity_id=aapl.entity_id,
+                as_of_date=date(2026, 4, 17),
+                close_price=100.0,
+                volume=1000.0,
+            ),
+            MarketBar(
+                cycle_id=cycle_id,
+                entity_id=msft.entity_id,
+                as_of_date=date(2026, 4, 17),
+                close_price=200.0,
+                volume=2000.0,
+            ),
+        ),
+    )
+
+    with pytest.raises(L3FeatureError, match="multiple FeatureSignalBundle"):
+        build_feature_signal_bundle(cycle_id, data_port=port)
+
+    bundles = build_feature_signal_bundles(cycle_id, data_port=port)
+    assert [bundle.entity_id for bundle in bundles] == ["ENT_AAPL", "ENT_MSFT"]

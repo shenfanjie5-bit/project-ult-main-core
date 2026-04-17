@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from importlib import import_module
+from os import environ
 from typing import Any
 
 from main_core.common.schemas.feature_bundle import FeatureSignalBundle
@@ -10,6 +12,7 @@ from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis.models import MarketBar
 from main_core.l1_l2_basis.ports import DataPlatformPort
 from main_core.l1_l2_basis.readers import read_entity_master, read_market_bars
+from main_core.l3_features.errors import L3FeatureError
 from main_core.l3_features.feature_math import (
     apply_feature_weight_multiplier,
     market_bar_feature_values,
@@ -17,19 +20,54 @@ from main_core.l3_features.feature_math import (
 from main_core.l3_features.multiplier_store import MultiplierStore
 from main_core.l3_features.weight_api import get_feature_weight_multiplier
 
+_DATA_PLATFORM_PORT_ENV = "MAIN_CORE_DATA_PLATFORM_PORT"
+
 
 def build_feature_signal_bundle(
     cycle_id: CycleId | str,
     *,
-    data_port: DataPlatformPort,
+    data_port: DataPlatformPort | None = None,
+    multiplier_store: MultiplierStore | None = None,
+    graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
+) -> FeatureSignalBundle:
+    """Build the documented single L3 feature signal bundle for a cycle.
+
+    The default data-platform port is resolved from
+    ``MAIN_CORE_DATA_PLATFORM_PORT=module:attribute``. The attribute may be either a
+    ``DataPlatformPort`` instance or a zero-argument factory returning one.
+    """
+
+    bundles = build_feature_signal_bundles(
+        cycle_id,
+        data_port=data_port,
+        multiplier_store=multiplier_store,
+        graph_impact=graph_impact,
+        candidate_signals=candidate_signals,
+    )
+    if len(bundles) == 1:
+        return bundles[0]
+    if not bundles:
+        raise L3FeatureError("cycle produced no FeatureSignalBundle records")
+    raise L3FeatureError(
+        "cycle produced multiple FeatureSignalBundle records; "
+        "call build_feature_signal_bundles for per-entity output"
+    )
+
+
+def build_feature_signal_bundles(
+    cycle_id: CycleId | str,
+    *,
+    data_port: DataPlatformPort | None = None,
     multiplier_store: MultiplierStore | None = None,
     graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
     candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[FeatureSignalBundle]:
     """Build one feature signal bundle per active entity with market data."""
 
-    entity_master = read_entity_master(cycle_id, port=data_port)
-    market_bars = read_market_bars(cycle_id, port=data_port)
+    resolved_data_port = _resolve_data_platform_port(data_port)
+    entity_master = read_entity_master(cycle_id, port=resolved_data_port)
+    market_bars = read_market_bars(cycle_id, port=resolved_data_port)
     active_entity_ids = {
         str(entity.entity_id)
         for entity in entity_master
@@ -63,6 +101,35 @@ def build_feature_signal_bundle(
     return bundles
 
 
+def _resolve_data_platform_port(data_port: DataPlatformPort | None) -> DataPlatformPort:
+    if data_port is not None:
+        return data_port
+
+    port_path = environ.get(_DATA_PLATFORM_PORT_ENV)
+    if not port_path:
+        raise L3FeatureError(
+            "data_port is required unless MAIN_CORE_DATA_PLATFORM_PORT is configured"
+        )
+
+    module_name, separator, attribute_name = port_path.partition(":")
+    if not separator or not module_name or not attribute_name:
+        raise L3FeatureError(
+            "MAIN_CORE_DATA_PLATFORM_PORT must use module:attribute format"
+        )
+
+    try:
+        candidate = getattr(import_module(module_name), attribute_name)
+        resolved_port = candidate() if callable(candidate) else candidate
+    except Exception as exc:
+        raise L3FeatureError("failed to resolve default data-platform port") from exc
+
+    if not isinstance(resolved_port, DataPlatformPort):
+        raise L3FeatureError(
+            "resolved default data-platform port does not implement DataPlatformPort"
+        )
+    return resolved_port
+
+
 def _latest_market_bars_by_entity(market_bars: list[MarketBar]) -> dict[str, MarketBar]:
     latest_bars: dict[str, MarketBar] = {}
     for market_bar in market_bars:
@@ -73,4 +140,4 @@ def _latest_market_bars_by_entity(market_bars: list[MarketBar]) -> dict[str, Mar
     return latest_bars
 
 
-__all__ = ["build_feature_signal_bundle"]
+__all__ = ["build_feature_signal_bundle", "build_feature_signal_bundles"]

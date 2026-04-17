@@ -17,7 +17,7 @@ from main_core.common.schemas import (
     WorldStateSnapshot,
 )
 from main_core.l7_recommendation.constraints import DefaultConstraintProvider
-from main_core.l7_recommendation.override import apply_override, find_override
+from main_core.l7_recommendation.override import OverrideStore, apply_override, find_override
 
 BUY_SCORE_THRESHOLD = 0.65
 REDUCE_SCORE_THRESHOLD = 0.35
@@ -30,11 +30,13 @@ def generate_recommendations(  # noqa: PLR0913
     *,
     constraint_provider: RecommendationConstraintProvider | None = None,
     overrides: Sequence[OverrideRecord] | None = None,
+    override_store: OverrideStore | None = None,
     risk_context: Mapping[str, Any] | None = None,
 ) -> list[RecommendationSnapshot]:
     """Generate one formal recommendation per selected pool entity."""
 
-    analysis_by_entity = _validate_inputs(pool, analyses, world_state, overrides or ())
+    active_overrides = _resolve_overrides(pool, overrides, override_store)
+    analysis_by_entity = _validate_inputs(pool, analyses, world_state, active_overrides)
     active_provider = constraint_provider or DefaultConstraintProvider()
     constraint_inputs = RecommendationConstraintInputs(
         world_state=world_state,
@@ -45,7 +47,7 @@ def generate_recommendations(  # noqa: PLR0913
     for entity_id in pool.selected_entities:
         candidate = _candidate_from_analysis(analysis_by_entity[str(entity_id)])
         source_is_inconclusive = candidate.action_type == "inconclusive"
-        matching_override = find_override(overrides or (), pool.cycle_id, entity_id)
+        matching_override = find_override(active_overrides, pool.cycle_id, entity_id)
         override_was_applied = matching_override is not None
         if matching_override is not None:
             candidate = apply_override(candidate, matching_override)
@@ -69,6 +71,41 @@ def generate_recommendations(  # noqa: PLR0913
         recommendations.append(gated_candidate)
 
     return recommendations
+
+
+def _resolve_overrides(
+    pool: OfficialAlphaPool,
+    overrides: Sequence[OverrideRecord] | None,
+    override_store: OverrideStore | None,
+) -> tuple[OverrideRecord, ...]:
+    if overrides is not None:
+        return _latest_overrides_by_cycle_entity(overrides)
+
+    active_store = (
+        override_store if override_store is not None else _default_override_store()
+    )
+    return _latest_overrides_by_cycle_entity(
+        tuple(
+            override
+            for override in active_store.list_overrides()
+            if override.cycle_id == pool.cycle_id
+        ),
+    )
+
+
+def _latest_overrides_by_cycle_entity(
+    overrides: Sequence[OverrideRecord],
+) -> tuple[OverrideRecord, ...]:
+    latest_by_key: dict[tuple[str, str], OverrideRecord] = {}
+    for override in overrides:
+        latest_by_key[(str(override.cycle_id), str(override.entity_id))] = override
+    return tuple(latest_by_key.values())
+
+
+def _default_override_store() -> OverrideStore:
+    from main_core.l7_recommendation.override import _DEFAULT_OVERRIDE_STORE
+
+    return _DEFAULT_OVERRIDE_STORE
 
 
 def _validate_inputs(

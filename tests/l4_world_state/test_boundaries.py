@@ -8,6 +8,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 L4_ROOT = PROJECT_ROOT / "src" / "main_core" / "l4_world_state"
 FORBIDDEN_IMPORT_PREFIXES = (
+    "main_core.l3_features",
     "main_core.l5_universe",
     "main_core.l6_alpha",
     "main_core.l7_recommendation",

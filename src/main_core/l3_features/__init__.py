@@ -1,5 +1,11 @@
 """L3 package: feature and signal bundle assembly."""
 
+from main_core.common.protocols import (
+    GraphEnginePort,
+    GraphImpactRecord,
+    GraphRegimeContext,
+    GraphSnapshotError,
+)
 from main_core.l3_features.builder import build_feature_signal_bundle, build_feature_signal_bundles
 from main_core.l3_features.candidate_signals import (
     CandidateSignalError,
@@ -10,14 +16,7 @@ from main_core.l3_features.candidate_signals import (
     normalize_candidate_signals,
 )
 from main_core.l3_features.errors import InvalidMultiplierError, L3FeatureError
-from main_core.l3_features.graph_adapter import (
-    GraphEnginePort,
-    GraphImpactRecord,
-    GraphRegimeContext,
-    GraphSnapshotError,
-    load_graph_features,
-    merge_graph_features,
-)
+from main_core.l3_features.graph_adapter import load_graph_features, merge_graph_features
 from main_core.l3_features.multiplier_store import InMemoryMultiplierStore, MultiplierStore
 from main_core.l3_features.weight_api import (
     apply_weight_multiplier,

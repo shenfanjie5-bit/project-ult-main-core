@@ -7,9 +7,8 @@ from typing import Any
 
 from main_core.common.contexts import WorldStateInputs
 from main_core.common.errors import MainCoreError
-from main_core.common.protocols import WorldStatePolicy
+from main_core.common.protocols import GraphEnginePort, WorldStatePolicy
 from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
-from main_core.l3_features.graph_adapter import GraphEnginePort
 from main_core.l4_world_state.graph_adapter import load_graph_regime_context, with_graph_impact
 from main_core.l4_world_state.reasoner_port import (
     StaticWorldStateReasonerPort,

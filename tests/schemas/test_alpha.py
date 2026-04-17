@@ -36,6 +36,16 @@ def test_single_prompt_result_factory_sets_p2_default_analyzer_type() -> None:
     assert result.analyzer_type == "single_prompt_v1"
 
 
+def test_alpha_result_accepts_multi_agent_v1_happy_path() -> None:
+    payload = _alpha_payload()
+    payload["analyzer_type"] = "multi_agent_v1"
+
+    result = AlphaResultSnapshot(**payload)
+
+    assert result.analyzer_type == "multi_agent_v1"
+    assert result.status == "ok"
+
+
 def test_alpha_result_missing_field_fails() -> None:
     payload = _alpha_payload()
     payload.pop("entity_id")

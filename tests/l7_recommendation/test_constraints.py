@@ -5,6 +5,7 @@ from __future__ import annotations
 from main_core.common.contexts import RecommendationConstraintInputs
 from main_core.common.schemas import RecommendationSnapshot, WorldStateSnapshot
 from main_core.l7_recommendation import DefaultConstraintProvider
+from main_core.l7_recommendation.stubs import NullConstraintProviderStub
 
 
 def _world_state(final_regime: str = "neutral") -> WorldStateSnapshot:
@@ -70,3 +71,16 @@ def test_default_constraint_provider_forces_inconclusive_from_risk_context() -> 
     assert result.rating is None
     assert result.confidence is None
     assert result.constraints_applied["risk_gate"] == "force_inconclusive"
+
+
+def test_legacy_null_constraint_provider_stub_downgrades_buy_in_risk_off() -> None:
+    inputs = RecommendationConstraintInputs(world_state=_world_state("risk_off"))
+    candidate = _candidate()
+
+    legacy_result = NullConstraintProviderStub().gate(inputs, candidate)
+    default_result = DefaultConstraintProvider().gate(inputs, candidate)
+
+    assert legacy_result == default_result
+    assert legacy_result.action_type == "hold"
+    assert legacy_result.rating == "B"
+    assert legacy_result.constraints_applied["regime_gate"] == "risk_off_buy_to_hold"

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from inspect import signature
 
-import pytest
-
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerBase, AnalyzerInterface
 from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
-from main_core.l6_alpha.stubs import SinglePromptAnalyzerStub
+from main_core.l6_alpha import AlphaReasonerResponse, SinglePromptAnalyzer, StaticAlphaReasonerPort
 
 CYCLE_ID = "cycle_001"
 ENTITY_ID = "ENT_001"
@@ -55,8 +53,8 @@ def test_analyzer_protocol_imports() -> None:
     assert AnalyzerBase is not None
 
 
-def test_single_prompt_stub_matches_runtime_protocol() -> None:
-    analyzer = SinglePromptAnalyzerStub()
+def test_single_prompt_analyzer_matches_runtime_protocol() -> None:
+    analyzer = SinglePromptAnalyzer()
 
     assert isinstance(analyzer, AnalyzerInterface)
     assert analyzer.analyzer_type == SINGLE_PROMPT_ANALYZER
@@ -67,11 +65,22 @@ def test_analyzer_protocol_requires_explicit_entity_argument() -> None:
 
     assert list(signature(AnalyzerInterface.analyze).parameters) == expected_parameters
     assert list(signature(AnalyzerBase.analyze).parameters) == expected_parameters
-    assert list(signature(SinglePromptAnalyzerStub.analyze).parameters) == expected_parameters
+    assert list(signature(SinglePromptAnalyzer.analyze).parameters) == expected_parameters
 
 
-def test_single_prompt_stub_analyze_placeholder_raises() -> None:
-    analyzer = SinglePromptAnalyzerStub()
+def test_single_prompt_analyzer_returns_single_prompt_result() -> None:
+    analyzer = SinglePromptAnalyzer(
+        StaticAlphaReasonerPort(
+            AlphaReasonerResponse(
+                score=0.64,
+                confidence=0.72,
+                rationale="quality and momentum align",
+                similar_cases=[],
+            ),
+        ),
+    )
 
-    with pytest.raises(NotImplementedError, match="#9"):
-        analyzer.analyze(ENTITY_ID, _analysis_context())
+    result = analyzer.analyze(ENTITY_ID, _analysis_context())
+
+    assert result.analyzer_type == SINGLE_PROMPT_ANALYZER
+    assert result.status == "ok"

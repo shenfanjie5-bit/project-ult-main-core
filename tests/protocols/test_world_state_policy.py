@@ -7,7 +7,7 @@ import pytest
 from main_core.common.contexts import WorldStateInputs
 from main_core.common.protocols import BoundedLlmDelta, WorldStatePolicy
 from main_core.common.schemas import FeatureSignalBundle
-from main_core.l4_world_state.stubs import DefaultWorldStatePolicyStub
+from main_core.l4_world_state import DefaultWorldStatePolicy
 
 CYCLE_ID = "cycle_001"
 ENTITY_ID = "ENT_001"
@@ -37,8 +37,8 @@ def test_world_state_policy_protocol_imports() -> None:
     assert BoundedLlmDelta is not None
 
 
-def test_default_world_state_policy_stub_matches_runtime_protocol() -> None:
-    policy = DefaultWorldStatePolicyStub()
+def test_default_world_state_policy_matches_runtime_protocol() -> None:
+    policy = DefaultWorldStatePolicy()
 
     assert isinstance(policy, WorldStatePolicy)
 
@@ -56,13 +56,18 @@ def test_default_world_state_policy_stub_matches_runtime_protocol() -> None:
     ],
 )
 def test_bound_delta_clamps_to_formal_range(raw_delta: int, expected_delta: int) -> None:
-    policy = DefaultWorldStatePolicyStub()
+    policy = DefaultWorldStatePolicy()
 
     assert policy.bound_delta(raw_delta) == expected_delta
 
 
-def test_baseline_placeholder_raises() -> None:
-    policy = DefaultWorldStatePolicyStub()
+def test_default_world_state_policy_derives_neutral_baseline() -> None:
+    policy = DefaultWorldStatePolicy()
 
-    with pytest.raises(NotImplementedError, match="#7"):
-        policy.baseline(_world_state_inputs())
+    assert policy.baseline(_world_state_inputs()) == "neutral"
+
+
+def test_default_world_state_policy_composes_final_regime() -> None:
+    policy = DefaultWorldStatePolicy()
+
+    assert policy.compose("neutral", 1) == "risk_on"

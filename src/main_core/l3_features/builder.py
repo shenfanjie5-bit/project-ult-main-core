@@ -89,10 +89,11 @@ def build_feature_signal_bundles(  # noqa: PLR0913
     }
     latest_bars = _latest_market_bars_by_entity(market_bars)
     multipliers = get_feature_weight_multiplier(cycle_id, store=multiplier_store)
-    candidate_signal_records = _read_candidate_signal_records(
-        CycleId(str(cycle_id)),
-        candidate_signal_port,
-    )
+    normalized_cycle_id = CycleId(str(cycle_id))
+    candidate_signal_records = [
+        *_candidate_signal_records_from_mapping(normalized_cycle_id, candidate_signals),
+        *_read_candidate_signal_records(normalized_cycle_id, candidate_signal_port),
+    ]
 
     bundles: list[FeatureSignalBundle] = []
     for entity_id in sorted(active_entity_ids):
@@ -109,7 +110,7 @@ def build_feature_signal_bundles(  # noqa: PLR0913
             cycle_id=cycle_id,
             entity_id=EntityId(entity_id),
             feature_values=feature_values,
-            signal_values=dict((candidate_signals or {}).get(entity_id, {})),
+            signal_values={},
             graph_features=dict((graph_impact or {}).get(entity_id, {})),
             feature_weight_multiplier=effective_multipliers,
         )
@@ -125,7 +126,7 @@ def build_feature_signal_bundles(  # noqa: PLR0913
             )
         normalized_candidate_signals = normalize_candidate_signals(
             candidate_signal_records,
-            cycle_id=CycleId(str(cycle_id)),
+            cycle_id=normalized_cycle_id,
             entity_id=EntityId(entity_id),
             multipliers=multipliers,
         )
@@ -173,6 +174,27 @@ def _latest_market_bars_by_entity(market_bars: list[MarketBar]) -> dict[str, Mar
         if previous_bar is None or market_bar.as_of_date > previous_bar.as_of_date:
             latest_bars[entity_id] = market_bar
     return latest_bars
+
+
+def _candidate_signal_records_from_mapping(
+    cycle_id: CycleId,
+    candidate_signals: Mapping[str, Mapping[str, Any]] | None,
+) -> list[CandidateSignalRecord]:
+    if not candidate_signals:
+        return []
+
+    records: list[CandidateSignalRecord] = []
+    for entity_id, entity_signals in candidate_signals.items():
+        for signal_name, value in entity_signals.items():
+            records.append(
+                CandidateSignalRecord(
+                    cycle_id=cycle_id,
+                    entity_id=EntityId(str(entity_id)),
+                    signal_name=str(signal_name),
+                    value=value,
+                )
+            )
+    return records
 
 
 def _read_candidate_signal_records(

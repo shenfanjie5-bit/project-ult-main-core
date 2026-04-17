@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from copy import deepcopy
 from types import MappingProxyType
 from typing import Any, Self
 
@@ -80,6 +81,21 @@ class FormalObjectBase(BaseModel):
             field_name: _thaw_value(getattr(self, field_name))
             for field_name in type(self).model_fields
         }
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, Any] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        """Copy through full validation so update values cannot bypass invariants."""
+
+        payload = self.model_dump(mode="python")
+        if update:
+            payload.update(update)
+        if deep:
+            payload = deepcopy(payload)
+        return type(self).model_validate(payload)
 
     def to_json(self) -> str:
         """Serialize the object using Pydantic's JSON representation."""

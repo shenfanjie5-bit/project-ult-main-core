@@ -66,6 +66,38 @@ def test_official_alpha_pool_freeze_reason_map_is_immutable() -> None:
     assert pool.to_json() == before_json
 
 
+def test_official_alpha_pool_model_copy_revalidates_capacity_updates() -> None:
+    payload = _pool_payload()
+    payload["official_alpha_pool_capacity"] = 1
+    payload["selected_entities"] = ["ENT_001"]
+    pool = OfficialAlphaPool(**payload)
+
+    with pytest.raises(ValidationError, match="selected_entities length"):
+        pool.model_copy(update={"selected_entities": ["ENT_001", "ENT_002"]})
+
+
+def test_official_alpha_pool_model_copy_freezes_valid_update_values() -> None:
+    payload = _pool_payload()
+    payload["official_alpha_pool_capacity"] = 2
+    payload["selected_entities"] = ["ENT_001"]
+    pool = OfficialAlphaPool(**payload)
+
+    copied = pool.model_copy(
+        update={
+            "selected_entities": ["ENT_001", "ENT_002"],
+            "freeze_reason_map": {"ENT_002": "new frozen entity"},
+        }
+    )
+    before_json = copied.to_json()
+
+    with pytest.raises(AttributeError):
+        copied.selected_entities.append("ENT_003")
+    with pytest.raises(TypeError):
+        copied.freeze_reason_map["ENT_003"] = "late mutation"
+
+    assert copied.to_json() == before_json
+
+
 @pytest.mark.parametrize(
     "capacity",
     [0, 101],

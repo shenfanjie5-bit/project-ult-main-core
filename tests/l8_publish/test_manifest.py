@@ -14,6 +14,7 @@ from main_core.l8_publish import (
     ManifestWriteResult,
     prepare_publish_bundle,
 )
+from main_core.l8_publish.dashboard import DASHBOARD_SNAPSHOT_KEY
 from main_core.l8_publish.manifest import (
     build_manifest_candidate,
     commit_formal_objects,
@@ -25,6 +26,7 @@ from main_core.l8_publish.refs import (
     RECOMMENDATION_SNAPSHOT_KEY,
     WORLD_STATE_SNAPSHOT_KEY,
 )
+from main_core.l8_publish.report import FORMAL_REPORT_KEY
 from tests.l8_publish import (
     FakeFormalObjectSource,
     RecordingPublishPort,
@@ -175,6 +177,8 @@ def test_prepare_publish_bundle_raises_when_manifest_write_fails() -> None:
         OFFICIAL_ALPHA_POOL_KEY,
         ALPHA_RESULT_SNAPSHOT_KEY,
         RECOMMENDATION_SNAPSHOT_KEY,
+        DASHBOARD_SNAPSHOT_KEY,
+        FORMAL_REPORT_KEY,
     ]
     assert len(publish_port.manifest_calls) == 1
 

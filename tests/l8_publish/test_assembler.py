@@ -7,6 +7,7 @@ import pytest
 from main_core.common.errors import ManifestPublishError
 from main_core.l8_publish import formal_object_ref, formal_object_refs, prepare_publish_bundle
 from main_core.l8_publish.assembler import collect_formal_objects
+from main_core.l8_publish.dashboard import DASHBOARD_SNAPSHOT_KEY
 from main_core.l8_publish.refs import (
     ALPHA_RESULT_SNAPSHOT_KEY,
     CANONICAL_FORMAL_OBJECT_KEYS,
@@ -14,6 +15,7 @@ from main_core.l8_publish.refs import (
     RECOMMENDATION_SNAPSHOT_KEY,
     WORLD_STATE_SNAPSHOT_KEY,
 )
+from main_core.l8_publish.report import FORMAL_REPORT_KEY
 from tests.l8_publish import (
     FakeFormalObjectSource,
     RecordingPublishPort,
@@ -54,7 +56,11 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
     bundle_payload = bundle.model_dump(mode="json")
     formal_objects = bundle_payload["formal_objects"]
     assert bundle.cycle_id == "cycle_l8"
-    assert tuple(formal_objects) == CANONICAL_FORMAL_OBJECT_KEYS
+    assert tuple(formal_objects) == (
+        *CANONICAL_FORMAL_OBJECT_KEYS,
+        DASHBOARD_SNAPSHOT_KEY,
+        FORMAL_REPORT_KEY,
+    )
     assert set(formal_objects[WORLD_STATE_SNAPSHOT_KEY]) == {
         "count",
         "payload",
@@ -81,6 +87,8 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
         OFFICIAL_ALPHA_POOL_KEY: SINGLE_OBJECT_COUNT,
         ALPHA_RESULT_SNAPSHOT_KEY: ALPHA_RESULT_COUNT,
         RECOMMENDATION_SNAPSHOT_KEY: ALPHA_RESULT_COUNT,
+        DASHBOARD_SNAPSHOT_KEY: SINGLE_OBJECT_COUNT,
+        FORMAL_REPORT_KEY: SINGLE_OBJECT_COUNT,
     }
     assert bundle_payload["audit_payload"]["inconclusive_count"] == SINGLE_OBJECT_COUNT
     assert bundle_payload["audit_payload"]["override_applied_count"] == SINGLE_OBJECT_COUNT
@@ -92,6 +100,18 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
         "ENT_A",
         "ENT_B",
     ]
+    assert formal_objects[DASHBOARD_SNAPSHOT_KEY]["payload"]["world_state_ref"] == (
+        "world_state_snapshot/cycle_l8/ref"
+    )
+    assert formal_objects[FORMAL_REPORT_KEY]["payload"]["recommendation_ref"] == (
+        formal_objects[DASHBOARD_SNAPSHOT_KEY]["payload"]["recommendation_ref"]
+    )
+    assert bundle_payload["manifest_candidate"]["table_snapshots"][
+        DASHBOARD_SNAPSHOT_KEY
+    ] == "dashboard_snapshot-snapshot"
+    assert bundle_payload["manifest_candidate"]["table_snapshots"][
+        FORMAL_REPORT_KEY
+    ] == "formal_report-snapshot"
 
 
 @pytest.mark.parametrize(
@@ -210,4 +230,4 @@ def test_formal_object_ref_rejects_missing_entry() -> None:
     )
 
     with pytest.raises(ManifestPublishError, match="missing formal object"):
-        formal_object_ref(bundle, "dashboard_snapshot")
+        formal_object_ref(bundle, "backtest_result")

@@ -17,7 +17,11 @@ from main_core.common.schemas import (
     RecommendationSnapshot,
     WorldStateSnapshot,
 )
-from main_core.l7_recommendation import generate_recommendations
+from main_core.l7_recommendation import (
+    InMemoryOverrideStore,
+    generate_recommendations,
+    submit_override,
+)
 from main_core.l7_recommendation.service import (
     BUY_SCORE_THRESHOLD,
     REDUCE_SCORE_THRESHOLD,
@@ -217,6 +221,31 @@ def test_generate_recommendations_applies_override_before_risk_off_gate() -> Non
         [_analysis("ENT_A", 0.5)],
         _world_state("risk_off"),
         overrides=[_override("ENT_A", "buy")],
+    )
+
+    assert recommendation.action_type == "hold"
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
+    assert recommendation.constraints_applied["regime_gate"] == "risk_off_buy_to_hold"
+
+
+def test_submit_override_default_store_feeds_recommendation_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_store = InMemoryOverrideStore(
+        [_override("ENT_Z", "reduce", cycle_id="cycle_other")],
+    )
+    monkeypatch.setattr(
+        "main_core.l7_recommendation.override._DEFAULT_OVERRIDE_STORE",
+        default_store,
+    )
+    pool = _pool(("ENT_A",))
+
+    submit_override(_override("ENT_A", "buy"))
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.5)],
+        _world_state("risk_off"),
     )
 
     assert recommendation.action_type == "hold"

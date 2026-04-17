@@ -119,6 +119,19 @@ def test_build_manifest_candidate_includes_commit_and_manifest_refs() -> None:
         ({"table_snapshots": []}, "table_snapshots must be a mapping"),
         ({"table_snapshots": {}}, "missing committed object keys"),
         (
+            {"table_snapshots": {WORLD_STATE_SNAPSHOT_KEY: "stale-snapshot"}},
+            "snapshot_id mismatch",
+        ),
+        (
+            {
+                "table_snapshots": {
+                    WORLD_STATE_SNAPSHOT_KEY: "world_state_snapshot-snapshot",
+                    "unrelated_snapshot": "unrelated-snapshot",
+                },
+            },
+            "unexpected object keys",
+        ),
+        (
             {"table_snapshots": {WORLD_STATE_SNAPSHOT_KEY: ""}},
             "table_snapshots entry must be non-empty",
         ),

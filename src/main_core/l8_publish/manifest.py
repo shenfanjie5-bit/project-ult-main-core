@@ -195,7 +195,11 @@ def _validate_manifest_write_result(
     if not isinstance(manifest.table_snapshots, Mapping):
         raise ManifestPublishError("manifest table_snapshots must be a mapping")
 
-    committed_object_keys = {committed.object_key for committed in committed_objects}
+    expected_snapshots = {
+        committed.object_key: committed.snapshot_id
+        for committed in committed_objects
+    }
+    committed_object_keys = set(expected_snapshots)
     table_snapshot_keys = set(manifest.table_snapshots)
     missing_object_keys = committed_object_keys - table_snapshot_keys
     if missing_object_keys:
@@ -203,13 +207,23 @@ def _validate_manifest_write_result(
         raise ManifestPublishError(
             f"manifest table_snapshots missing committed object keys: {missing}",
         )
-    for object_key in committed_object_keys:
+    unexpected_object_keys = table_snapshot_keys - committed_object_keys
+    if unexpected_object_keys:
+        unexpected = ", ".join(sorted(unexpected_object_keys))
+        raise ManifestPublishError(
+            f"manifest table_snapshots contains unexpected object keys: {unexpected}",
+        )
+    for object_key, expected_snapshot_id in expected_snapshots.items():
         table_snapshot = manifest.table_snapshots[object_key]
         if table_snapshot is None or (
             isinstance(table_snapshot, str) and not table_snapshot.strip()
         ):
             raise ManifestPublishError(
                 f"manifest table_snapshots entry must be non-empty for {object_key}",
+            )
+        if table_snapshot != expected_snapshot_id:
+            raise ManifestPublishError(
+                f"manifest table_snapshots snapshot_id mismatch for {object_key}",
             )
 
 

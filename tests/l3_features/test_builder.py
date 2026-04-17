@@ -13,6 +13,7 @@ from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis import EntityMasterRow, MarketBar
 from main_core.l3_features import (
+    CandidateSignalRecord,
     InMemoryMultiplierStore,
     InvalidMultiplierError,
     L3FeatureError,
@@ -29,6 +30,19 @@ from .conftest import FakeDataPlatformPort
 
 UPDATED_CLOSE_PRICE = 120.0
 UPDATED_CLOSE_MULTIPLIER = 1.2
+
+
+class FakeCandidateSignalPort:
+    def __init__(self, records: tuple[CandidateSignalRecord, ...]) -> None:
+        self.records = records
+        self.calls: list[CycleId] = []
+
+    def read_candidate_signals(
+        self,
+        cycle_id: CycleId,
+    ) -> tuple[CandidateSignalRecord, ...]:
+        self.calls.append(cycle_id)
+        return self.records
 
 
 def test_feature_math_derives_market_features_and_applies_known_multipliers(
@@ -167,7 +181,17 @@ def test_build_feature_signal_bundle_uses_latest_market_bar_and_sorts_by_entity(
         "volume": 0.5,
         "return_1d": 1.0,
     }
-    assert bundles[0].signal_values == {"direction": "positive"}
+    assert bundles[0].signal_values == {
+        "candidate_signals": {
+            "direction": {
+                "raw_value": "positive",
+                "adjusted_value": "positive",
+                "source": "layer_b",
+                "confidence": None,
+                "metadata": {},
+            },
+        },
+    }
     assert bundles[0].graph_features == {"centrality": 0.7}
     assert bundles[1].feature_values == {
         "close_price": 240.0,
@@ -201,6 +225,60 @@ def test_build_feature_signal_bundle_defaults_optional_inputs_to_empty_dicts(
         "volume": 1.0,
         "return_1d": 1.0,
     }
+
+
+def test_build_feature_signal_bundle_normalizes_all_candidate_signal_inputs(
+    cycle_id: CycleId,
+    active_entity: EntityMasterRow,
+    market_bar: MarketBar,
+) -> None:
+    port = FakeDataPlatformPort(
+        market_bars=(market_bar,),
+        entity_master=(active_entity,),
+    )
+    candidate_port = FakeCandidateSignalPort(
+        (
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=active_entity.entity_id,
+                signal_name="port_score",
+                value=2.0,
+                confidence=0.7,
+                metadata={"source_table": "candidate_signal_port"},
+            ),
+        )
+    )
+
+    bundle = build_feature_signal_bundle(
+        cycle_id,
+        data_port=port,
+        candidate_signals={
+            str(active_entity.entity_id): {
+                "legacy_direction": "positive",
+            },
+        },
+        candidate_signal_port=candidate_port,
+    )
+
+    assert bundle.signal_values == {
+        "candidate_signals": {
+            "legacy_direction": {
+                "raw_value": "positive",
+                "adjusted_value": "positive",
+                "source": "layer_b",
+                "confidence": None,
+                "metadata": {},
+            },
+            "port_score": {
+                "raw_value": 2.0,
+                "adjusted_value": 2.0,
+                "source": "layer_b",
+                "confidence": 0.7,
+                "metadata": {"source_table": "candidate_signal_port"},
+            },
+        },
+    }
+    assert candidate_port.calls == [cycle_id]
 
 
 def test_default_multiplier_store_update_is_visible_to_same_cycle_build() -> None:

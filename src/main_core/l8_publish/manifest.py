@@ -56,6 +56,8 @@ def write_manifest_after_commits(
     cycle_id: CycleId,
     committed_objects: Sequence[CommittedFormalObject],
     publish_port: DataPlatformPublishPort,
+    *,
+    expected_manifest_ref: str | None = None,
 ) -> ManifestWriteResult:
     """Write the cycle manifest only after all formal object commits succeed."""
 
@@ -64,12 +66,20 @@ def write_manifest_after_commits(
         manifest = publish_port.write_cycle_manifest(
             cycle_id=cycle_id,
             committed_objects=committed_tuple,
+            expected_manifest_ref=expected_manifest_ref,
         )
     except ManifestPublishError:
         raise
     except Exception as exc:
         raise ManifestPublishError("failed to write cycle publish manifest") from exc
     _validate_manifest_write_result(manifest, committed_tuple)
+    if (
+        expected_manifest_ref is not None
+        and manifest.manifest_ref != expected_manifest_ref
+    ):
+        raise ManifestPublishError(
+            "manifest write result must match expected manifest_ref",
+        )
     return manifest
 
 

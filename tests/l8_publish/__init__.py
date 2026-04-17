@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import (
     AlphaResultSnapshot,
     OfficialAlphaPool,
@@ -190,13 +191,22 @@ class RecordingPublishPort:
         *,
         cycle_id: CycleId,
         committed_objects: Sequence[CommittedFormalObject],
+        expected_manifest_ref: str | None = None,
     ) -> ManifestWriteResult:
         committed_tuple = tuple(committed_objects)
-        self.manifest_calls.append((cycle_id, committed_tuple))
         if self.fail_manifest:
             raise RuntimeError("manifest write failed")
+        manifest_ref = self.manifest_ref or f"manifest/{cycle_id}"
+        if (
+            expected_manifest_ref is not None
+            and manifest_ref != expected_manifest_ref
+        ):
+            raise ManifestPublishError(
+                "reserved manifest_ref does not match publish target",
+            )
+        self.manifest_calls.append((cycle_id, committed_tuple))
         return ManifestWriteResult(
-            manifest_ref=self.manifest_ref or f"manifest/{cycle_id}",
+            manifest_ref=manifest_ref,
             manifest_version="v1",
             table_snapshots={
                 committed.object_key: committed.snapshot_id

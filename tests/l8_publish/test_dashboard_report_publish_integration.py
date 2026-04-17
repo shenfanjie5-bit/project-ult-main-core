@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+import pytest
+
+from main_core.common.errors import ManifestPublishError
+from main_core.common.types import CycleId
 from main_core.l8_publish import prepare_publish_bundle
 from main_core.l8_publish.dashboard import DASHBOARD_SNAPSHOT_KEY
+from main_core.l8_publish.publish_port import (
+    CommittedFormalObject,
+    ManifestWriteResult,
+)
 from main_core.l8_publish.refs import (
     ALPHA_RESULT_SNAPSHOT_KEY,
     OFFICIAL_ALPHA_POOL_KEY,
@@ -98,3 +108,64 @@ def test_formal_report_uses_reserved_manifest_ref_in_committed_payload() -> None
         "manifest_ref"
     ] == manifest_ref
     assert report_commit_payload["appendix_refs"]["manifest_ref"] == manifest_ref
+
+
+def test_manifest_ref_mismatch_fails_before_visible_manifest_write() -> None:
+    publish_port = MismatchedManifestRefPublishPort(
+        reserved_manifest_ref="manifest/cycle_l8/reserved",
+        actual_manifest_ref="pg://cycle_publish_manifest/cycle_l8/v43",
+    )
+
+    with pytest.raises(ManifestPublishError, match="reserved manifest_ref"):
+        prepare_publish_bundle(
+            "cycle_l8",
+            source=FakeFormalObjectSource(),
+            publish_port=publish_port,
+        )
+
+    report_commit_payload = next(
+        commit_payload
+        for _, object_key, commit_payload in publish_port.commit_calls
+        if object_key == FORMAL_REPORT_KEY
+    )
+    assert publish_port.reserve_manifest_ref_calls == ["cycle_l8"]
+    assert publish_port.manifest_calls == []
+    assert report_commit_payload["appendix_refs"]["manifest_ref"] == (
+        "manifest/cycle_l8/reserved"
+    )
+    assert report_commit_payload["appendix_refs"]["manifest_ref"] != (
+        "pg://cycle_publish_manifest/cycle_l8/v43"
+    )
+
+
+class MismatchedManifestRefPublishPort(RecordingPublishPort):
+    def __init__(
+        self,
+        *,
+        reserved_manifest_ref: str,
+        actual_manifest_ref: str,
+    ) -> None:
+        super().__init__(manifest_ref=reserved_manifest_ref)
+        self.actual_manifest_ref = actual_manifest_ref
+
+    def write_cycle_manifest(
+        self,
+        *,
+        cycle_id: CycleId,
+        committed_objects: Sequence[CommittedFormalObject],
+        expected_manifest_ref: str | None = None,
+    ) -> ManifestWriteResult:
+        committed_tuple = tuple(committed_objects)
+        if expected_manifest_ref != self.actual_manifest_ref:
+            raise ManifestPublishError(
+                "reserved manifest_ref does not match publish target",
+            )
+        self.manifest_calls.append((cycle_id, committed_tuple))
+        return ManifestWriteResult(
+            manifest_ref=self.actual_manifest_ref,
+            manifest_version="v1",
+            table_snapshots={
+                committed.object_key: committed.snapshot_id
+                for committed in committed_tuple
+            },
+        )

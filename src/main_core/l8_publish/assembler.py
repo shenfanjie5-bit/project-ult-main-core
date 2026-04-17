@@ -104,14 +104,8 @@ def prepare_publish_bundle(
         requested_cycle_id,
         committed_objects,
         publish_port,
+        expected_manifest_ref=reserved_manifest_ref,
     )
-    if (
-        reserved_manifest_ref is not None
-        and manifest.manifest_ref != reserved_manifest_ref
-    ):
-        raise ManifestPublishError(
-            "manifest write result must match reserved manifest_ref",
-        )
     bundle_formal_objects = _build_bundle_formal_objects(
         formal_objects,
         committed_objects,

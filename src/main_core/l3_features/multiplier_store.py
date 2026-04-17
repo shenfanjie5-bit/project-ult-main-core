@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from math import isfinite
+from threading import Lock
 from typing import Protocol, runtime_checkable
 
 from main_core.common.types import CycleId
@@ -30,11 +31,13 @@ class InMemoryMultiplierStore:
 
     def __init__(self) -> None:
         self._multipliers_by_cycle: dict[str, dict[str, float]] = {}
+        self._lock = Lock()
 
     def get_multipliers(self, cycle_id: CycleId | str) -> dict[str, float]:
         """Return a defensive copy of the multipliers for the requested cycle."""
 
-        return dict(self._multipliers_by_cycle.get(str(cycle_id), {}))
+        with self._lock:
+            return dict(self._multipliers_by_cycle.get(str(cycle_id), {}))
 
     def put_multipliers(
         self,
@@ -45,9 +48,10 @@ class InMemoryMultiplierStore:
 
         validated_updates = _validated_multiplier_copy(updates)
         cycle_key = str(cycle_id)
-        current_multipliers = self.get_multipliers(cycle_key)
-        current_multipliers.update(validated_updates)
-        self._multipliers_by_cycle[cycle_key] = current_multipliers
+        with self._lock:
+            current_multipliers = dict(self._multipliers_by_cycle.get(cycle_key, {}))
+            current_multipliers.update(validated_updates)
+            self._multipliers_by_cycle[cycle_key] = current_multipliers
 
 
 def _validated_multiplier_copy(updates: Mapping[str, float]) -> dict[str, float]:

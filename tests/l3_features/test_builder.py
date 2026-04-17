@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from datetime import date
+from sys import float_info
+
+import pytest
 
 from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis import EntityMasterRow, MarketBar
 from main_core.l3_features import (
     InMemoryMultiplierStore,
+    InvalidMultiplierError,
     apply_weight_multiplier,
     build_feature_signal_bundle,
 )
@@ -71,6 +75,14 @@ def test_feature_math_omits_missing_return_1d(cycle_id: CycleId) -> None:
         "close_price": 100.0,
         "volume": 1000.0,
     }
+
+
+def test_feature_math_rejects_weighted_feature_overflow() -> None:
+    with pytest.raises(InvalidMultiplierError, match="weighted feature values"):
+        apply_feature_weight_multiplier(
+            {"close_price": float_info.max},
+            {"close_price": 2.0},
+        )
 
 
 def test_build_feature_signal_bundle_uses_latest_market_bar_and_sorts_by_entity(

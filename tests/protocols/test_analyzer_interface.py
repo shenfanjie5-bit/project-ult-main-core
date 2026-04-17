@@ -7,11 +7,17 @@ from inspect import signature
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerBase, AnalyzerInterface
 from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
-from main_core.l6_alpha import AlphaReasonerResponse, SinglePromptAnalyzer, StaticAlphaReasonerPort
+from main_core.l6_alpha import (
+    AlphaReasonerResponse,
+    MultiAgentAnalyzer,
+    SinglePromptAnalyzer,
+    StaticAlphaReasonerPort,
+)
 
 CYCLE_ID = "cycle_001"
 ENTITY_ID = "ENT_001"
 SINGLE_PROMPT_ANALYZER = "single_prompt_v1"
+MULTI_AGENT_ANALYZER = "multi_agent_v1"
 
 
 def _feature_bundle() -> FeatureSignalBundle:
@@ -60,12 +66,20 @@ def test_single_prompt_analyzer_matches_runtime_protocol() -> None:
     assert analyzer.analyzer_type == SINGLE_PROMPT_ANALYZER
 
 
+def test_multi_agent_analyzer_matches_runtime_protocol() -> None:
+    analyzer = MultiAgentAnalyzer()
+
+    assert isinstance(analyzer, AnalyzerInterface)
+    assert analyzer.analyzer_type == MULTI_AGENT_ANALYZER
+
+
 def test_analyzer_protocol_requires_explicit_entity_argument() -> None:
     expected_parameters = ["self", "entity_id", "context"]
 
     assert list(signature(AnalyzerInterface.analyze).parameters) == expected_parameters
     assert list(signature(AnalyzerBase.analyze).parameters) == expected_parameters
     assert list(signature(SinglePromptAnalyzer.analyze).parameters) == expected_parameters
+    assert list(signature(MultiAgentAnalyzer.analyze).parameters) == expected_parameters
 
 
 def test_single_prompt_analyzer_returns_single_prompt_result() -> None:
@@ -83,4 +97,13 @@ def test_single_prompt_analyzer_returns_single_prompt_result() -> None:
     result = analyzer.analyze(ENTITY_ID, _analysis_context())
 
     assert result.analyzer_type == SINGLE_PROMPT_ANALYZER
+    assert result.status == "ok"
+
+
+def test_multi_agent_analyzer_returns_multi_agent_result() -> None:
+    analyzer = MultiAgentAnalyzer()
+
+    result = analyzer.analyze(ENTITY_ID, _analysis_context())
+
+    assert result.analyzer_type == MULTI_AGENT_ANALYZER
     assert result.status == "ok"

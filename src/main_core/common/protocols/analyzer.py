@@ -7,6 +7,7 @@ from typing import ClassVar, Protocol, runtime_checkable
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.schemas import AlphaResultSnapshot
+from main_core.common.types import EntityId
 
 
 @runtime_checkable
@@ -19,8 +20,12 @@ class AnalyzerInterface(Protocol):
 
     analyzer_type: ClassVar[str]
 
-    def analyze(self, context: AlphaAnalysisContext) -> AlphaResultSnapshot:
-        """Analyze one stock using a typed runtime context."""
+    def analyze(
+        self,
+        entity_id: EntityId,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        """Analyze one stock using an explicit entity and typed runtime context."""
 
 
 class AnalyzerBase(ABC):
@@ -32,8 +37,12 @@ class AnalyzerBase(ABC):
         """Return the analyzer implementation identifier."""
 
     @abstractmethod
-    def analyze(self, context: AlphaAnalysisContext) -> AlphaResultSnapshot:
-        """Analyze one stock using a typed runtime context."""
+    def analyze(
+        self,
+        entity_id: EntityId,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        """Analyze one stock using an explicit entity and typed runtime context."""
 
 
 __all__ = ["AnalyzerBase", "AnalyzerInterface"]

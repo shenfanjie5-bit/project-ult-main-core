@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from inspect import signature
+
 import pytest
 
 from main_core.common.contexts import AlphaAnalysisContext
@@ -60,8 +62,16 @@ def test_single_prompt_stub_matches_runtime_protocol() -> None:
     assert analyzer.analyzer_type == SINGLE_PROMPT_ANALYZER
 
 
+def test_analyzer_protocol_requires_explicit_entity_argument() -> None:
+    expected_parameters = ["self", "entity_id", "context"]
+
+    assert list(signature(AnalyzerInterface.analyze).parameters) == expected_parameters
+    assert list(signature(AnalyzerBase.analyze).parameters) == expected_parameters
+    assert list(signature(SinglePromptAnalyzerStub.analyze).parameters) == expected_parameters
+
+
 def test_single_prompt_stub_analyze_placeholder_raises() -> None:
     analyzer = SinglePromptAnalyzerStub()
 
     with pytest.raises(NotImplementedError, match="#9"):
-        analyzer.analyze(_analysis_context())
+        analyzer.analyze(ENTITY_ID, _analysis_context())

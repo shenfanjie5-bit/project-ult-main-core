@@ -179,6 +179,31 @@ def test_select_official_alpha_pool_rejects_too_many_frozen_entities() -> None:
         )
 
 
+def test_select_official_alpha_pool_rejects_stale_previous_pool_freeze() -> None:
+    previous_pool = _pool(
+        selected_entities=["ENT_STALE"],
+        freeze_reason_map={"ENT_STALE": "stale core freeze"},
+    )
+
+    with pytest.raises(MainCoreError, match="frozen entities must be present"):
+        select_official_alpha_pool(
+            _world_state(),
+            [_bundle("ENT_A", 2.0)],
+            previous_pool=previous_pool,
+            capacity=2,
+        )
+
+
+def test_select_official_alpha_pool_rejects_explicit_frozen_entity_without_bundle() -> None:
+    with pytest.raises(MainCoreError, match="frozen entities must be present"):
+        select_official_alpha_pool(
+            _world_state(),
+            [_bundle("ENT_A", 2.0)],
+            frozen_entities={"ENT_STALE": "manual freeze"},
+            capacity=2,
+        )
+
+
 @pytest.mark.parametrize("capacity", [0, 101])
 def test_select_official_alpha_pool_rejects_capacity_outside_bounds(capacity: int) -> None:
     with pytest.raises(MainCoreError, match="official_alpha_pool_capacity"):

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from main_core.common import schemas
 from main_core.common.schemas import (
     LAYER_SCHEMA_IMPORT_POLICY,
     SCHEMA_COMMON_EXPORTS,
@@ -127,7 +128,7 @@ def _check_schema_import_node(
     return violations
 
 
-def _check_schema_import_from_node(
+def _check_schema_import_from_node(  # noqa: PLR0912
     path: Path,
     layer: str,
     node: ast.ImportFrom,
@@ -320,8 +321,6 @@ def test_layer_schema_import_policy_passes() -> None:
 
 
 def test_schema_exports_are_declared_in_boundary_policy() -> None:
-    import main_core.common.schemas as schemas
-
     metadata_exports = {
         "LAYER_SCHEMA_IMPORT_POLICY",
         "SCHEMA_COMMON_EXPORTS",

@@ -8,7 +8,7 @@ from datetime import date
 
 from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis import CalendarDay, EntityMasterRow, MarketBar
-from main_core.l3_features import build_feature_signal_bundle
+from main_core.l3_features import build_feature_signal_bundles
 
 
 @dataclass
@@ -56,7 +56,7 @@ def test_pure_market_l1_to_l3_flow_without_graph_or_candidate_signals() -> None:
         ),
     )
 
-    bundles = build_feature_signal_bundle(cycle_id, data_port=port)
+    bundles = build_feature_signal_bundles(cycle_id, data_port=port)
 
     assert len(bundles) == 1
     assert bundles[0].cycle_id == cycle_id

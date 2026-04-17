@@ -10,7 +10,7 @@ from main_core.common.protocols import (
     RecommendationConstraintProviderBase,
 )
 from main_core.common.schemas import RecommendationSnapshot, WorldStateSnapshot
-from main_core.l7_recommendation.stubs import NullConstraintProviderStub
+from main_core.l7_recommendation import DefaultConstraintProvider
 
 CYCLE_ID = "cycle_001"
 ENTITY_ID = "ENT_001"
@@ -54,14 +54,14 @@ def test_constraint_provider_protocol_imports() -> None:
     assert RecommendationConstraintProviderBase is not None
 
 
-def test_null_constraint_provider_matches_runtime_protocol() -> None:
-    provider = NullConstraintProviderStub()
+def test_default_constraint_provider_matches_runtime_protocol() -> None:
+    provider = DefaultConstraintProvider()
 
     assert isinstance(provider, RecommendationConstraintProvider)
 
 
-def test_null_constraint_provider_returns_candidate_unchanged() -> None:
-    provider = NullConstraintProviderStub()
+def test_default_constraint_provider_returns_neutral_candidate_unchanged() -> None:
+    provider = DefaultConstraintProvider()
     candidate = _candidate()
 
     gated_candidate = provider.gate(_constraint_inputs(), candidate)

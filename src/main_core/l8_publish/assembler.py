@@ -269,6 +269,13 @@ def _validate_publish_consistency(
         raise ManifestPublishError(
             f"missing alpha result for selected pool entities: {missing}",
         )
+    extra_alpha_entity_ids = alpha_entity_ids - selected_entity_ids
+    if extra_alpha_entity_ids:
+        extra = ", ".join(sorted(extra_alpha_entity_ids))
+        raise ManifestPublishError(
+            "alpha result entity_id must belong to pool.selected_entities: "
+            f"{extra}",
+        )
 
     recommendation_entity_ids = _unique_entity_ids(
         RECOMMENDATION_SNAPSHOT_KEY,

@@ -16,8 +16,13 @@ from main_core.common.schemas import (
     RecommendationSnapshot,
     WorldStateSnapshot,
 )
+from main_core.l7_recommendation import override as override_module
 from main_core.l7_recommendation.constraints import DefaultConstraintProvider
-from main_core.l7_recommendation.override import OverrideStore, apply_override, find_override
+from main_core.l7_recommendation.override import (
+    OverrideStore,
+    apply_override,
+    find_override,
+)
 
 BUY_SCORE_THRESHOLD = 0.65
 REDUCE_SCORE_THRESHOLD = 0.35
@@ -103,9 +108,7 @@ def _latest_overrides_by_cycle_entity(
 
 
 def _default_override_store() -> OverrideStore:
-    from main_core.l7_recommendation.override import _DEFAULT_OVERRIDE_STORE
-
-    return _DEFAULT_OVERRIDE_STORE
+    return override_module._DEFAULT_OVERRIDE_STORE
 
 
 def _validate_inputs(

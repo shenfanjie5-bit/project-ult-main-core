@@ -206,17 +206,30 @@ def _validate_publish_consistency(
             f"missing alpha result for selected pool entities: {missing}",
         )
 
-    for recommendation in recommendations:
-        recommendation_entity_id = str(recommendation.entity_id)
-        if recommendation_entity_id not in selected_entity_ids:
-            raise ManifestPublishError(
-                "recommendation entity_id must belong to pool.selected_entities",
-            )
+    recommendation_entity_ids = _unique_entity_ids(
+        RECOMMENDATION_SNAPSHOT_KEY,
+        recommendations,
+    )
+    extra_recommendation_entity_ids = recommendation_entity_ids - selected_entity_ids
+    if extra_recommendation_entity_ids:
+        extra = ", ".join(sorted(extra_recommendation_entity_ids))
+        raise ManifestPublishError(
+            "recommendation entity_id must belong to pool.selected_entities: "
+            f"{extra}",
+        )
+
+    missing_recommendation_entity_ids = selected_entity_ids - recommendation_entity_ids
+    if missing_recommendation_entity_ids:
+        missing = ", ".join(sorted(missing_recommendation_entity_ids))
+        raise ManifestPublishError(
+            "missing recommendation for selected pool entities: "
+            f"{missing}",
+        )
 
 
 def _unique_entity_ids(
     object_key: str,
-    formal_objects: Sequence[AlphaResultSnapshot],
+    formal_objects: Sequence[AlphaResultSnapshot | RecommendationSnapshot],
 ) -> set[str]:
     entity_ids: set[str] = set()
     for formal_object in formal_objects:

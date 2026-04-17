@@ -161,6 +161,47 @@ def test_prepare_publish_bundle_rejects_recommendation_outside_pool() -> None:
     assert publish_port.manifest_calls == []
 
 
+def test_prepare_publish_bundle_rejects_missing_recommendation_for_pool_entity() -> None:
+    source = FakeFormalObjectSource(
+        loaded_pool=pool(("ENT_A", "ENT_B")),
+        loaded_alpha_results=[alpha_result("ENT_A"), alpha_result("ENT_B")],
+        loaded_recommendations=[recommendation("ENT_A")],
+    )
+    publish_port = RecordingPublishPort()
+
+    with pytest.raises(ManifestPublishError, match="missing recommendation"):
+        prepare_publish_bundle(
+            "cycle_l8",
+            source=source,
+            publish_port=publish_port,
+        )
+
+    assert publish_port.commit_calls == []
+    assert publish_port.manifest_calls == []
+
+
+def test_prepare_publish_bundle_rejects_duplicate_recommendation_entity() -> None:
+    source = FakeFormalObjectSource(
+        loaded_pool=pool(("ENT_A", "ENT_B")),
+        loaded_alpha_results=[alpha_result("ENT_A"), alpha_result("ENT_B")],
+        loaded_recommendations=[
+            recommendation("ENT_A"),
+            recommendation("ENT_A", action_type="hold"),
+        ],
+    )
+    publish_port = RecordingPublishPort()
+
+    with pytest.raises(ManifestPublishError, match="duplicate recommendation_snapshot"):
+        prepare_publish_bundle(
+            "cycle_l8",
+            source=source,
+            publish_port=publish_port,
+        )
+
+    assert publish_port.commit_calls == []
+    assert publish_port.manifest_calls == []
+
+
 def test_formal_object_ref_rejects_missing_entry() -> None:
     bundle = prepare_publish_bundle(
         "cycle_l8",

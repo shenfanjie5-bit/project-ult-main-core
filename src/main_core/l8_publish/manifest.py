@@ -26,7 +26,9 @@ def commit_formal_objects(
 
     committed_objects: list[CommittedFormalObject] = []
     for object_key in _ordered_object_keys(formal_objects):
-        payload = _commit_payload(formal_objects[object_key])
+        formal_object = formal_objects[object_key]
+        payload = _commit_payload(formal_object)
+        expected_row_count = _expected_row_count(formal_object)
         try:
             committed_object = publish_port.commit_formal_object(
                 cycle_id=cycle_id,
@@ -40,10 +42,11 @@ def commit_formal_objects(
                 f"failed to commit formal object {object_key}",
             ) from exc
 
-        if committed_object.object_key != object_key:
-            raise ManifestPublishError(
-                f"commit result object_key mismatch for {object_key}",
-            )
+        _validate_committed_formal_object(
+            committed_object,
+            object_key,
+            expected_row_count,
+        )
         committed_objects.append(committed_object)
 
     return tuple(committed_objects)
@@ -56,15 +59,18 @@ def write_manifest_after_commits(
 ) -> ManifestWriteResult:
     """Write the cycle manifest only after all formal object commits succeed."""
 
+    committed_tuple = tuple(committed_objects)
     try:
-        return publish_port.write_cycle_manifest(
+        manifest = publish_port.write_cycle_manifest(
             cycle_id=cycle_id,
-            committed_objects=tuple(committed_objects),
+            committed_objects=committed_tuple,
         )
     except ManifestPublishError:
         raise
     except Exception as exc:
         raise ManifestPublishError("failed to write cycle publish manifest") from exc
+    _validate_manifest_write_result(manifest, committed_tuple)
+    return manifest
 
 
 def build_manifest_candidate(
@@ -125,6 +131,80 @@ def _commit_payload(value: FormalObjectValue) -> Mapping[str, Any]:
         for item in value
     ]
     return {"items": payload_items, "count": len(payload_items)}
+
+
+def _expected_row_count(value: FormalObjectValue) -> int:
+    if isinstance(value, FormalObjectBase):
+        return 1
+    return len(value)
+
+
+def _validate_committed_formal_object(
+    committed_object: CommittedFormalObject,
+    object_key: str,
+    expected_row_count: int,
+) -> None:
+    if not isinstance(committed_object, CommittedFormalObject):
+        raise ManifestPublishError(
+            f"commit result for {object_key} must be CommittedFormalObject",
+        )
+    if committed_object.object_key != object_key:
+        raise ManifestPublishError(
+            f"commit result object_key mismatch for {object_key}",
+        )
+    for field_name in ("ref", "snapshot_id", "payload_hash"):
+        field_value = getattr(committed_object, field_name)
+        if not _non_empty_string(field_value):
+            raise ManifestPublishError(
+                f"commit result {field_name} must be non-empty for {object_key}",
+            )
+    if (
+        not isinstance(committed_object.row_count, int)
+        or isinstance(committed_object.row_count, bool)
+        or committed_object.row_count < 0
+    ):
+        raise ManifestPublishError(
+            f"commit result row_count must be non-negative for {object_key}",
+        )
+    if committed_object.row_count != expected_row_count:
+        raise ManifestPublishError(
+            f"commit result row_count mismatch for {object_key}",
+        )
+
+
+def _validate_manifest_write_result(
+    manifest: ManifestWriteResult,
+    committed_objects: Sequence[CommittedFormalObject],
+) -> None:
+    if not isinstance(manifest, ManifestWriteResult):
+        raise ManifestPublishError("manifest result must be ManifestWriteResult")
+    if not _non_empty_string(manifest.manifest_ref):
+        raise ManifestPublishError("manifest_ref must be non-empty")
+    if not _non_empty_string(manifest.manifest_version):
+        raise ManifestPublishError("manifest_version must be non-empty")
+    if not isinstance(manifest.table_snapshots, Mapping):
+        raise ManifestPublishError("manifest table_snapshots must be a mapping")
+
+    committed_object_keys = {committed.object_key for committed in committed_objects}
+    table_snapshot_keys = set(manifest.table_snapshots)
+    missing_object_keys = committed_object_keys - table_snapshot_keys
+    if missing_object_keys:
+        missing = ", ".join(sorted(missing_object_keys))
+        raise ManifestPublishError(
+            f"manifest table_snapshots missing committed object keys: {missing}",
+        )
+    for object_key in committed_object_keys:
+        table_snapshot = manifest.table_snapshots[object_key]
+        if table_snapshot is None or (
+            isinstance(table_snapshot, str) and not table_snapshot.strip()
+        ):
+            raise ManifestPublishError(
+                f"manifest table_snapshots entry must be non-empty for {object_key}",
+            )
+
+
+def _non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 __all__ = [

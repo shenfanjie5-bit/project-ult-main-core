@@ -12,6 +12,12 @@ from main_core.common.types import CycleId, EntityId
 from main_core.l1_l2_basis.models import MarketBar
 from main_core.l1_l2_basis.ports import DataPlatformPort
 from main_core.l1_l2_basis.readers import read_entity_master, read_market_bars
+from main_core.l3_features.candidate_signals import (
+    CandidateSignalPort,
+    CandidateSignalRecord,
+    merge_candidate_signals,
+    normalize_candidate_signals,
+)
 from main_core.l3_features.errors import L3FeatureError
 from main_core.l3_features.feature_math import (
     apply_feature_weight_multiplier,
@@ -36,6 +42,7 @@ def build_feature_signal_bundle(  # noqa: PLR0913
     graph_engine_port: GraphEnginePort | None = None,
     graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
     candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_signal_port: CandidateSignalPort | None = None,
 ) -> FeatureSignalBundle:
     """Build the documented single L3 feature signal bundle for a cycle.
 
@@ -51,6 +58,7 @@ def build_feature_signal_bundle(  # noqa: PLR0913
         graph_engine_port=graph_engine_port,
         graph_impact=graph_impact,
         candidate_signals=candidate_signals,
+        candidate_signal_port=candidate_signal_port,
     )
     if len(bundles) == 1:
         return bundles[0]
@@ -70,6 +78,7 @@ def build_feature_signal_bundles(  # noqa: PLR0913
     graph_engine_port: GraphEnginePort | None = None,
     graph_impact: Mapping[str, Mapping[str, Any]] | None = None,
     candidate_signals: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_signal_port: CandidateSignalPort | None = None,
 ) -> list[FeatureSignalBundle]:
     """Build one feature signal bundle per active entity with market data."""
 
@@ -83,6 +92,10 @@ def build_feature_signal_bundles(  # noqa: PLR0913
     }
     latest_bars = _latest_market_bars_by_entity(market_bars)
     multipliers = get_feature_weight_multiplier(cycle_id, store=multiplier_store)
+    candidate_signal_records = _read_candidate_signal_records(
+        CycleId(str(cycle_id)),
+        candidate_signal_port,
+    )
 
     bundles: list[FeatureSignalBundle] = []
     for entity_id in sorted(active_entity_ids):
@@ -113,6 +126,14 @@ def build_feature_signal_bundles(  # noqa: PLR0913
                 bundle,
                 {**dict(bundle.graph_features), **graph_features},
             )
+        normalized_candidate_signals = normalize_candidate_signals(
+            candidate_signal_records,
+            cycle_id=CycleId(str(cycle_id)),
+            entity_id=EntityId(entity_id),
+            multipliers=multipliers,
+        )
+        if normalized_candidate_signals:
+            bundle = merge_candidate_signals(bundle, normalized_candidate_signals)
         bundles.append(bundle)
 
     return bundles
@@ -155,6 +176,15 @@ def _latest_market_bars_by_entity(market_bars: list[MarketBar]) -> dict[str, Mar
         if previous_bar is None or market_bar.as_of_date > previous_bar.as_of_date:
             latest_bars[entity_id] = market_bar
     return latest_bars
+
+
+def _read_candidate_signal_records(
+    cycle_id: CycleId,
+    candidate_signal_port: CandidateSignalPort | None,
+) -> list[CandidateSignalRecord]:
+    if candidate_signal_port is None:
+        return []
+    return list(candidate_signal_port.read_candidate_signals(cycle_id))
 
 
 __all__ = ["build_feature_signal_bundle", "build_feature_signal_bundles"]

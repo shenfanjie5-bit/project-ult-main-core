@@ -58,6 +58,13 @@ class FormalObjectSource(Protocol):
 class DataPlatformPublishPort(Protocol):
     """Manifest-backed formal object publication boundary."""
 
+    def reserve_cycle_manifest_ref(
+        self,
+        *,
+        cycle_id: CycleId,
+    ) -> str:
+        """Reserve the exact manifest ref that write_cycle_manifest will publish."""
+
     def commit_formal_object(
         self,
         *,
@@ -72,8 +79,13 @@ class DataPlatformPublishPort(Protocol):
         *,
         cycle_id: CycleId,
         committed_objects: Sequence[CommittedFormalObject],
+        expected_manifest_ref: str | None = None,
     ) -> ManifestWriteResult:
-        """Write the cycle manifest after all formal object commits succeed."""
+        """Write the cycle manifest after all formal object commits succeed.
+
+        When ``expected_manifest_ref`` is provided, the port must either publish
+        the manifest at exactly that ref or fail before the manifest is visible.
+        """
 
 
 class DerivedFormalObjectBuilder(Protocol):

@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
+
 from main_core.common.contexts import AlphaAnalysisContext
+from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import FeatureSignalBundle
 from main_core.l4_world_state import derive_world_state
 from main_core.l5_universe import select_official_alpha_pool
@@ -22,7 +25,13 @@ from main_core.l7_recommendation import (
 )
 from main_core.l8_publish import prepare_publish_bundle
 from main_core.l8_publish.refs import RECOMMENDATION_SNAPSHOT_KEY
-from tests.l8_publish import FakeFormalObjectSource, RecordingPublishPort
+from tests.l8_publish import (
+    FakeFormalObjectSource,
+    RecordingPublishPort,
+    alpha_result,
+    pool,
+    recommendation,
+)
 
 
 class SourceWithPreviousRecommendationTrap(FakeFormalObjectSource):
@@ -121,6 +130,32 @@ def test_publish_consumes_current_l7_output_without_previous_recommendations() -
     assert "previous_recommendation" not in serialized_bundle
     assert "last_recommendation" not in serialized_bundle
     assert "fallback_recommendation_ref" not in serialized_bundle
+
+
+def test_publish_rejects_alpha_results_outside_official_pool_before_commit() -> None:
+    source = FakeFormalObjectSource(
+        loaded_pool=pool(("ENT_A", "ENT_B")),
+        loaded_alpha_results=[
+            alpha_result("ENT_A"),
+            alpha_result("ENT_B"),
+            alpha_result("ENT_Z"),
+        ],
+        loaded_recommendations=[
+            recommendation("ENT_A"),
+            recommendation("ENT_B", action_type="hold"),
+        ],
+    )
+    publish_port = RecordingPublishPort()
+
+    with pytest.raises(ManifestPublishError, match="alpha result entity_id"):
+        prepare_publish_bundle(
+            "cycle_l8",
+            source=source,
+            publish_port=publish_port,
+        )
+
+    assert publish_port.commit_calls == []
+    assert publish_port.manifest_calls == []
 
 
 def _feature_bundle(

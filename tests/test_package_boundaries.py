@@ -89,7 +89,15 @@ def _schema_import_violations(package_root: Path) -> list[SchemaImportViolation]
                 if isinstance(node, ast.Import):
                     violations.extend(_check_schema_import_node(path, layer, node))
                 elif isinstance(node, ast.ImportFrom):
-                    violations.extend(_check_schema_import_from_node(path, layer, node))
+                    importing_package = _importing_package_name(package_root, path)
+                    violations.extend(
+                        _check_schema_import_from_node(
+                            path,
+                            layer,
+                            node,
+                            importing_package,
+                        )
+                    )
     return violations
 
 
@@ -123,8 +131,9 @@ def _check_schema_import_from_node(
     path: Path,
     layer: str,
     node: ast.ImportFrom,
+    importing_package: str,
 ) -> list[SchemaImportViolation]:
-    module = _absolute_import_from_module(node)
+    module = _absolute_import_from_module(node, importing_package)
     if module is None:
         return []
 
@@ -176,12 +185,27 @@ def _check_schema_import_from_node(
     return violations
 
 
-def _absolute_import_from_module(node: ast.ImportFrom) -> str | None:
-    if node.module is None:
-        return None
+def _importing_package_name(package_root: Path, path: Path) -> str:
+    relative_path = path.relative_to(package_root)
+    package_parts = relative_path.parent.parts
+    return ".".join((package_root.name, *package_parts))
+
+
+def _absolute_import_from_module(
+    node: ast.ImportFrom,
+    importing_package: str,
+) -> str | None:
     if node.level == 0:
         return node.module
-    return None
+
+    package_parts = importing_package.split(".")
+    if node.level > len(package_parts):
+        return None
+
+    absolute_package = ".".join(package_parts[: len(package_parts) - node.level + 1])
+    if node.module is None:
+        return absolute_package
+    return f"{absolute_package}.{node.module}"
 
 
 def _check_schema_export(
@@ -329,6 +353,26 @@ def test_schema_policy_triggers_on_synthetic_downstream_import(tmp_path: Path) -
 
     assert [violation.imported_name for violation in violations] == [
         "main_core.common.schemas",
+        "RecommendationSnapshot",
+        "PublishBundle",
+    ]
+
+
+def test_schema_policy_triggers_on_synthetic_relative_downstream_import(
+    tmp_path: Path,
+) -> None:
+    synthetic_root = tmp_path / "main_core"
+    synthetic_layer = synthetic_root / "l3_features"
+    synthetic_layer.mkdir(parents=True)
+    (synthetic_layer / "__init__.py").write_text(
+        "from ..common.schemas import RecommendationSnapshot\n"
+        "from ..common.schemas.publish import PublishBundle\n",
+        encoding="utf-8",
+    )
+
+    violations = _schema_import_violations(synthetic_root)
+
+    assert [violation.imported_name for violation in violations] == [
         "RecommendationSnapshot",
         "PublishBundle",
     ]

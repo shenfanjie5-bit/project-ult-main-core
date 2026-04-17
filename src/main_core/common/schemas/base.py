@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 class FormalObjectBase(BaseModel):
     """Frozen schema base for formal and runtime contract objects."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     def to_json(self) -> str:
         """Serialize the object using Pydantic's JSON representation."""

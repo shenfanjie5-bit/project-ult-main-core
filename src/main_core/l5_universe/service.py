@@ -30,9 +30,13 @@ def select_official_alpha_pool(  # noqa: PLR0913
 
     active_config = config or PoolSelectionConfig(capacity=capacity)
     bundle_list = list(bundles)
-    _validate_inputs(world_state, bundle_list)
+    current_entity_ids = _validate_inputs(world_state, bundle_list)
 
     freeze_reason_map = merge_frozen_entities(previous_pool, frozen_entities)
+    _ensure_frozen_entities_have_current_bundles(
+        freeze_reason_map,
+        current_entity_ids,
+    )
     ensure_frozen_entities_fit_capacity(freeze_reason_map, active_config.capacity)
 
     observation_candidates = rank_candidates(world_state, bundle_list, active_config)
@@ -60,7 +64,7 @@ def select_official_alpha_pool(  # noqa: PLR0913
 def _validate_inputs(
     world_state: WorldStateSnapshot,
     bundles: Sequence[FeatureSignalBundle],
-) -> None:
+) -> set[str]:
     if not bundles:
         raise MainCoreError("bundles must not be empty")
 
@@ -73,6 +77,25 @@ def _validate_inputs(
         if entity_id in seen_entity_ids:
             raise MainCoreError("duplicate entity_id in FeatureSignalBundle input")
         seen_entity_ids.add(entity_id)
+    return seen_entity_ids
+
+
+def _ensure_frozen_entities_have_current_bundles(
+    freeze_reason_map: Mapping[EntityId, str],
+    current_entity_ids: set[str],
+) -> None:
+    """Require each frozen entity to have current L3 feature inputs."""
+
+    missing_entity_ids = sorted(
+        str(entity_id)
+        for entity_id in freeze_reason_map
+        if str(entity_id) not in current_entity_ids
+    )
+    if missing_entity_ids:
+        raise MainCoreError(
+            "frozen entities must be present in current FeatureSignalBundle input: "
+            f"{', '.join(missing_entity_ids)}",
+        )
 
 
 def _select_entities(

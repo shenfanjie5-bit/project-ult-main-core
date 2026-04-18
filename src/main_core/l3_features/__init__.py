@@ -17,7 +17,11 @@ from main_core.l3_features.candidate_signals import (
 )
 from main_core.l3_features.errors import InvalidMultiplierError, L3FeatureError
 from main_core.l3_features.graph_adapter import load_graph_features, merge_graph_features
-from main_core.l3_features.multiplier_store import InMemoryMultiplierStore, MultiplierStore
+from main_core.l3_features.multiplier_store import (
+    InMemoryMultiplierStore,
+    MultiplierStore,
+    validate_multiplier_mapping,
+)
 from main_core.l3_features.weight_api import (
     apply_weight_multiplier,
     get_feature_weight_multiplier,
@@ -44,4 +48,5 @@ __all__ = [
     "merge_candidate_signals",
     "merge_graph_features",
     "normalize_candidate_signals",
+    "validate_multiplier_mapping",
 ]

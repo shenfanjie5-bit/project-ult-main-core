@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from main_core.common.schemas.base import FormalObjectBase
 from main_core.common.types import CycleId, EntityId
@@ -24,6 +24,7 @@ class AlphaResultSnapshot(FormalObjectBase):
     rationale: str
     similar_cases: list[dict[str, Any]]
     status: AlphaStatus
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_inconclusive_score(self) -> AlphaResultSnapshot:

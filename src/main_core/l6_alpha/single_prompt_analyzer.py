@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import ClassVar
 
 from main_core.common.contexts import AlphaAnalysisContext
@@ -9,18 +10,16 @@ from main_core.common.errors import MainCoreError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot, single_prompt_result
 from main_core.common.types import EntityId
+from main_core.l6_alpha.errors import AlphaAnalyzerError, AlphaReasonerError
 from main_core.l6_alpha.fallback import (
     build_inconclusive_result,
     is_task_level_failure,
 )
 from main_core.l6_alpha.reasoner_port import (
     AlphaReasonerPort,
+    AlphaReasonerResponse,
     StaticAlphaReasonerPort,
 )
-
-
-class AlphaAnalyzerError(MainCoreError):
-    """Raised when the L6 analyzer contract is violated before provider work."""
 
 
 class SinglePromptAnalyzer(AnalyzerBase):
@@ -46,7 +45,9 @@ class SinglePromptAnalyzer(AnalyzerBase):
         except Exception as exc:
             if is_task_level_failure(exc):
                 return build_inconclusive_result(entity_id, context, str(exc))
-            raise
+            if isinstance(exc, MainCoreError):
+                raise
+            raise AlphaReasonerError("alpha reasoner failed") from exc
 
         if response.task_failed:
             reason = response.failure_reason or response.rationale or "alpha task failed"
@@ -57,6 +58,7 @@ class SinglePromptAnalyzer(AnalyzerBase):
                 similar_cases=response.similar_cases,
             )
 
+        _validate_successful_response(response)
         return single_prompt_result(
             cycle_id=context.cycle_id,
             entity_id=entity_id,
@@ -66,6 +68,17 @@ class SinglePromptAnalyzer(AnalyzerBase):
             similar_cases=response.similar_cases,
             status="ok",
         )
+
+
+def _validate_successful_response(response: AlphaReasonerResponse) -> None:
+    if response.score is None or not isfinite(response.score):
+        raise AlphaReasonerError("successful alpha response score must be finite")
+    if not isfinite(response.confidence) or not 0.0 <= response.confidence <= 1.0:
+        raise AlphaReasonerError(
+            "successful alpha response confidence must be finite and within 0.0..1.0"
+        )
+    if not response.rationale.strip():
+        raise AlphaReasonerError("successful alpha response rationale must be non-empty")
 
 
 __all__ = ["AlphaAnalyzerError", "SinglePromptAnalyzer"]

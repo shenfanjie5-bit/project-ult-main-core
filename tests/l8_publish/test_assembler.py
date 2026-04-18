@@ -91,6 +91,12 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
         FORMAL_REPORT_KEY: SINGLE_OBJECT_COUNT,
     }
     assert bundle_payload["audit_payload"]["inconclusive_count"] == SINGLE_OBJECT_COUNT
+    assert bundle_payload["audit_payload"]["alpha_inconclusive_count"] == (
+        SINGLE_OBJECT_COUNT
+    )
+    assert bundle_payload["audit_payload"]["recommendation_inconclusive_count"] == (
+        SINGLE_OBJECT_COUNT
+    )
     assert bundle_payload["audit_payload"]["override_applied_count"] == SINGLE_OBJECT_COUNT
     assert bundle_payload["retrospective_seed"]["selected_entity_ids"] == [
         "ENT_A",
@@ -231,3 +237,22 @@ def test_formal_object_ref_rejects_missing_entry() -> None:
 
     with pytest.raises(ManifestPublishError, match="missing formal object"):
         formal_object_ref(bundle, "backtest_result")
+
+
+def test_prepare_publish_bundle_audit_counts_recommendation_inconclusive_separately() -> None:
+    source = FakeFormalObjectSource(
+        loaded_pool=pool(("ENT_A",)),
+        loaded_alpha_results=[alpha_result("ENT_A", score=0.7, status="ok")],
+        loaded_recommendations=[recommendation("ENT_A", action_type="inconclusive")],
+    )
+
+    bundle = prepare_publish_bundle(
+        "cycle_l8",
+        source=source,
+        publish_port=RecordingPublishPort(),
+        derived_builders=(),
+    )
+
+    assert bundle.audit_payload["alpha_inconclusive_count"] == 0
+    assert bundle.audit_payload["recommendation_inconclusive_count"] == 1
+    assert bundle.audit_payload["inconclusive_count"] == 1

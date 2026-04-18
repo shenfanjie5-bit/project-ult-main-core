@@ -54,9 +54,20 @@ def test_l3_graph_exports_are_compatibility_aliases() -> None:
 
 def test_l3_adapter_only_exports_adapter_helpers() -> None:
     assert set(l3_graph_adapter.__all__) == {
+        "GraphEnginePort",
+        "GraphImpactRecord",
+        "GraphRegimeContext",
+        "GraphSnapshotError",
         "load_graph_features",
         "merge_graph_features",
     }
+
+
+def test_l3_adapter_keeps_runtime_compatibility_aliases() -> None:
+    assert l3_graph_adapter.GraphEnginePort is GraphEnginePort
+    assert l3_graph_adapter.GraphImpactRecord is GraphImpactRecord
+    assert l3_graph_adapter.GraphRegimeContext is GraphRegimeContext
+    assert l3_graph_adapter.GraphSnapshotError is GraphSnapshotError
 
 
 def test_graph_engine_port_is_runtime_checkable_and_read_only() -> None:

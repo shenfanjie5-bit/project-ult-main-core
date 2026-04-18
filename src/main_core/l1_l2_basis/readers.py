@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TypeVar
 
 from main_core.common.types import CycleId
 from main_core.l1_l2_basis.errors import DataPlatformReadError
 from main_core.l1_l2_basis.models import CalendarDay, EntityMasterRow, MarketBar
 from main_core.l1_l2_basis.ports import DataPlatformPort
-
-BasisDTO = TypeVar("BasisDTO", MarketBar, CalendarDay, EntityMasterRow)
 
 
 def read_market_bars(cycle_id: CycleId | str, *, port: DataPlatformPort) -> list[MarketBar]:
@@ -40,7 +37,7 @@ def read_entity_master(
     return sorted(records, key=lambda record: record.entity_id)
 
 
-def _read_from_port(
+def _read_from_port[BasisDTO: (MarketBar, CalendarDay, EntityMasterRow)](
     cycle_id: CycleId | str,
     read: Callable[[CycleId | str], Sequence[BasisDTO]],
     expected_type: type[BasisDTO],

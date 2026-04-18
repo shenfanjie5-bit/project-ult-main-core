@@ -36,13 +36,15 @@ def test_build_formal_report_happy_path() -> None:
         "alpha_result_ref": "alpha_result_snapshot/cycle_l8/ref",
         "recommendation_ref": "recommendation_snapshot/cycle_l8/ref",
         "manifest_ref": "manifest/cycle_l8",
-        "audit_payload_ref": "audit_payload/cycle_l8",
     }
 
 
 def test_build_formal_report_rejects_missing_ref() -> None:
     bundle = _mutated_bundle(
-        lambda payload: payload["formal_objects"][RECOMMENDATION_SNAPSHOT_KEY].pop("ref")
+        lambda payload: (
+            payload["formal_objects"][RECOMMENDATION_SNAPSHOT_KEY].pop("ref"),
+            payload["manifest_candidate"].pop("object_refs"),
+        )
     )
 
     with pytest.raises(ManifestPublishError, match="ref"):
@@ -51,16 +53,37 @@ def test_build_formal_report_rejects_missing_ref() -> None:
 
 def test_build_formal_report_rejects_missing_manifest_ref() -> None:
     bundle = _mutated_bundle(
-        lambda payload: payload["manifest_candidate"].pop("manifest_ref")
+        lambda payload: (
+            payload["manifest_candidate"].pop("manifest_ref"),
+            payload["manifest_candidate"].pop("object_refs"),
+        )
     )
 
     with pytest.raises(ManifestPublishError, match="manifest_ref"):
         build_formal_report("cycle_l8", bundle)
 
 
+def test_build_formal_report_allows_opaque_manifest_ref() -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["manifest_candidate"].__setitem__(
+            "manifest_ref",
+            "pg://cycle_publish_manifest/42",
+        )
+    )
+
+    report = build_formal_report("cycle_l8", bundle)
+
+    assert report.appendix_refs["manifest_ref"] == "pg://cycle_publish_manifest/42"
+
+
 def test_build_formal_report_rejects_cycle_mismatch() -> None:
     bundle = _mutated_bundle(
-        lambda payload: payload.__setitem__("cycle_id", "cycle_other")
+        lambda payload: (
+            payload.__setitem__("cycle_id", "cycle_other"),
+            payload["manifest_candidate"].__setitem__("cycle_id", "cycle_other"),
+            payload["audit_payload"].__setitem__("cycle_id", "cycle_other"),
+            payload["retrospective_seed"].__setitem__("cycle_id", "cycle_other"),
+        )
     )
 
     with pytest.raises(ManifestPublishError, match="cycle_id"):

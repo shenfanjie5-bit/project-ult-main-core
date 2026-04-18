@@ -134,7 +134,6 @@ def _build_appendix_refs(
         "alpha_result_ref": objects.alpha_results.ref,
         "recommendation_ref": objects.recommendations.ref,
         "manifest_ref": _manifest_ref(cycle_id, bundle),
-        "audit_payload_ref": _audit_payload_ref(cycle_id, bundle),
     }
 
 
@@ -142,21 +141,10 @@ def _manifest_ref(cycle_id: CycleId, bundle: PublishBundle) -> str:
     _ensure_same_cycle("manifest_candidate", bundle.manifest_candidate, cycle_id)
     manifest_ref = bundle.manifest_candidate.get("manifest_ref")
     if isinstance(manifest_ref, str) and manifest_ref:
-        _ensure_ref_points_to_cycle("manifest_ref", manifest_ref, cycle_id)
         return manifest_ref
     raise ManifestPublishError(
         "manifest_candidate.manifest_ref must be reserved before formal report build",
     )
-
-
-def _audit_payload_ref(cycle_id: CycleId, bundle: PublishBundle) -> str:
-    _ensure_same_cycle("audit_payload", bundle.audit_payload, cycle_id)
-    for key in ("audit_payload_ref", "ref"):
-        value = bundle.audit_payload.get(key)
-        if isinstance(value, str) and value:
-            _ensure_ref_points_to_cycle(key, value, cycle_id)
-            return value
-    return f"audit_payload/{cycle_id}"
 
 
 def _ensure_same_cycle(
@@ -167,15 +155,6 @@ def _ensure_same_cycle(
     payload_cycle_id = payload.get("cycle_id")
     if payload_cycle_id is not None and payload_cycle_id != str(cycle_id):
         raise ManifestPublishError(f"{payload_name}.cycle_id must match")
-
-
-def _ensure_ref_points_to_cycle(
-    ref_name: str,
-    ref: str,
-    cycle_id: CycleId,
-) -> None:
-    if str(cycle_id) not in ref:
-        raise ManifestPublishError(f"{ref_name} must point to requested cycle_id")
 
 
 def _entity_ids_by_action(

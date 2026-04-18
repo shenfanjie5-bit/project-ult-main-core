@@ -8,11 +8,19 @@ import pytest
 from pydantic import ValidationError
 
 from main_core.common.errors import MainCoreError
-from main_core.common.schemas import OverrideRecord, RecommendationSnapshot
+from main_core.common.schemas import (
+    AlphaResultSnapshot,
+    OfficialAlphaPool,
+    OverrideRecord,
+    RecommendationSnapshot,
+    WorldStateSnapshot,
+)
 from main_core.l7_recommendation import (
     InMemoryOverrideStore,
     apply_override,
     find_override,
+    generate_recommendations,
+    rating_for_action,
     submit_override,
 )
 
@@ -76,6 +84,13 @@ def test_find_override_returns_matching_cycle_entity_record() -> None:
     assert find_override([first, second], "cycle_l7", "ENT_Z") is None
 
 
+def test_find_override_uses_latest_duplicate_submission() -> None:
+    older = OverrideRecord(**_override_payload(action_type="buy"))
+    newer = OverrideRecord(**_override_payload(action_type="reduce"))
+
+    assert find_override([older, newer], "cycle_l7", "ENT_A") == newer
+
+
 def test_apply_override_sets_human_audit_fields_and_keeps_constraints() -> None:
     override = OverrideRecord(**_override_payload(action_type="reduce"))
 
@@ -88,8 +103,62 @@ def test_apply_override_sets_human_audit_fields_and_keeps_constraints() -> None:
     assert result.constraints_applied == {"existing": "kept"}
 
 
+def test_rating_for_action_is_shared_l7_rule() -> None:
+    assert rating_for_action("buy") == "A"
+    assert rating_for_action("hold") == "B"
+    assert rating_for_action("reduce") == "C"
+
+
 def test_apply_override_rejects_non_matching_override() -> None:
     override = OverrideRecord(**_override_payload(entity_id="ENT_B"))
 
     with pytest.raises(MainCoreError, match="entity_id"):
         apply_override(_candidate(), override)
+
+
+def test_submit_override_honors_falsey_custom_store_end_to_end() -> None:
+    class FalseyOverrideStore(InMemoryOverrideStore):
+        def __len__(self) -> int:
+            return 0
+
+    store = FalseyOverrideStore()
+    submit_override(_override_payload(action_type="reduce"), store=store)
+    pool = OfficialAlphaPool(
+        cycle_id="cycle_l7",
+        observation_pool_size=1,
+        official_alpha_pool_capacity=1,
+        selected_entities=["ENT_A"],
+        added_entities=["ENT_A"],
+        removed_entities=[],
+        freeze_reason_map={},
+    )
+    analysis = AlphaResultSnapshot(
+        cycle_id="cycle_l7",
+        entity_id="ENT_A",
+        analyzer_type="single_prompt_v1",
+        score=0.8,
+        confidence=0.7,
+        rationale="fixture alpha",
+        similar_cases=[],
+        status="ok",
+    )
+    world_state = WorldStateSnapshot(
+        cycle_id="cycle_l7",
+        baseline_regime="neutral",
+        llm_delta=0,
+        final_regime="neutral",
+        llm_rationale="fixture",
+        actual_model_used="fixture",
+        actual_provider="local",
+        fallback_path=[],
+    )
+
+    [recommendation] = generate_recommendations(
+        pool,
+        [analysis],
+        world_state,
+        override_store=store,
+    )
+
+    assert recommendation.action_type == "reduce"
+    assert recommendation.override_applied is True

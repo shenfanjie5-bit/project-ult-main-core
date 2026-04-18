@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError, MainCoreError
-from main_core.common.schemas import AlphaResultSnapshot
-from main_core.l6_alpha import AlphaReasonerResponse, SinglePromptAnalyzer
+from main_core.common.schemas import AlphaResultSnapshot, FeatureSignalBundle, WorldStateSnapshot
+from main_core.l6_alpha import AlphaReasonerError, AlphaReasonerResponse, SinglePromptAnalyzer
 from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
 
 EXPECTED_FEATURE_MOMENTUM = 4.2
@@ -127,6 +128,116 @@ def test_single_prompt_analyzer_propagates_main_core_infrastructure_errors(
 
     with pytest.raises(MainCoreError, match="reasoner unavailable"):
         analyzer.analyze("ENT_A", analysis_context)
+
+
+def test_single_prompt_analyzer_wraps_unknown_provider_errors(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    analyzer = SinglePromptAnalyzer(
+        RecordingReasonerPort(error=RuntimeError("socket closed")),
+    )
+
+    with pytest.raises(AlphaReasonerError, match="alpha reasoner failed"):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        AlphaReasonerResponse(
+            score=None,
+            confidence=0.6,
+            rationale="missing score",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=float("nan"),
+            confidence=0.6,
+            rationale="nan score",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=float("inf"),
+            confidence=0.6,
+            rationale="inf score",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=0.5,
+            confidence=float("nan"),
+            rationale="nan confidence",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=0.5,
+            confidence=1.1,
+            rationale="too confident",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=0.5,
+            confidence=0.6,
+            rationale=" ",
+            similar_cases=[],
+        ),
+    ],
+)
+def test_single_prompt_analyzer_rejects_malformed_successful_response(
+    analysis_context: AlphaAnalysisContext,
+    response: AlphaReasonerResponse,
+) -> None:
+    analyzer = SinglePromptAnalyzer(RecordingReasonerPort(response=response))
+
+    with pytest.raises(AlphaReasonerError):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    "context_update",
+    [
+        {
+            "feature_bundle": FeatureSignalBundle(
+                cycle_id="cycle_other",
+                entity_id="ENT_A",
+                feature_values={"momentum": 1.0},
+                signal_values={},
+                graph_features={},
+                feature_weight_multiplier={"momentum": 1.0},
+            ),
+        },
+        {
+            "feature_bundle": FeatureSignalBundle(
+                cycle_id="cycle_l6",
+                entity_id="ENT_OTHER",
+                feature_values={"momentum": 1.0},
+                signal_values={},
+                graph_features={},
+                feature_weight_multiplier={"momentum": 1.0},
+            ),
+        },
+        {
+            "world_state": WorldStateSnapshot(
+                cycle_id="cycle_other",
+                baseline_regime="neutral",
+                llm_delta=0,
+                final_regime="neutral",
+                llm_rationale="fixture",
+                actual_model_used="fixture",
+                actual_provider="local",
+                fallback_path=[],
+            ),
+        },
+    ],
+)
+def test_alpha_analysis_context_rejects_upstream_mismatch(
+    analysis_context: AlphaAnalysisContext,
+    context_update: dict[str, object],
+) -> None:
+    payload = analysis_context.model_dump(mode="python")
+    payload.update(context_update)
+
+    with pytest.raises(ValidationError):
+        AlphaAnalysisContext.model_validate(payload)
 
 
 def test_single_prompt_analyzer_does_not_reapply_feature_multipliers(

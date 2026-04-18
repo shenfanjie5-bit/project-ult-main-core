@@ -9,7 +9,6 @@ from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError
 from main_core.common.schemas import AlphaResultSnapshot, single_prompt_result
 from main_core.common.types import EntityId
-from main_core.l6_alpha.reasoner_port import AlphaReasonerResponse
 
 
 def build_inconclusive_result(
@@ -36,9 +35,7 @@ def build_inconclusive_result(
 def is_task_level_failure(error: BaseException) -> bool:
     """Return whether an exception should be downgraded to inconclusive."""
 
-    return isinstance(error, InconclusiveError) or (
-        isinstance(error, AlphaReasonerResponse) and error.task_failed
-    )
+    return isinstance(error, InconclusiveError)
 
 
 __all__ = ["build_inconclusive_result", "is_task_level_failure"]

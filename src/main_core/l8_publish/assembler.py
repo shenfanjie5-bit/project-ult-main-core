@@ -18,6 +18,10 @@ from main_core.l8_publish.audit_payload import (
     build_audit_payload,
     build_retrospective_seed,
 )
+from main_core.l8_publish.bundle_entries import (
+    build_bundle_formal_object_entry,
+    ordered_formal_object_keys,
+)
 from main_core.l8_publish.manifest import (
     build_manifest_candidate,
     commit_formal_objects,
@@ -32,7 +36,6 @@ from main_core.l8_publish.publish_port import (
 )
 from main_core.l8_publish.refs import (
     ALPHA_RESULT_SNAPSHOT_KEY,
-    CANONICAL_FORMAL_OBJECT_KEYS,
     OFFICIAL_ALPHA_POOL_KEY,
     RECOMMENDATION_SNAPSHOT_KEY,
     WORLD_STATE_SNAPSHOT_KEY,
@@ -320,50 +323,15 @@ def _build_bundle_formal_objects(
         for committed in committed_objects
     }
     bundle_formal_objects: dict[str, dict[str, Any]] = {}
-    for object_key in _ordered_object_keys(formal_objects):
+    for object_key in ordered_formal_object_keys(formal_objects):
         committed_object = committed_by_key.get(object_key)
         if committed_object is None:
             raise ManifestPublishError(f"missing commit result for {object_key}")
-        bundle_formal_objects[object_key] = _bundle_formal_object_entry(
+        bundle_formal_objects[object_key] = build_bundle_formal_object_entry(
             formal_objects[object_key],
             committed_object.ref,
         )
     return bundle_formal_objects
-
-
-def _bundle_formal_object_entry(
-    value: FormalObjectValue,
-    ref: str,
-) -> dict[str, Any]:
-    payload = _bundle_payload(value)
-    return {
-        "ref": ref,
-        "payload": payload,
-        "count": len(payload) if isinstance(payload, list) else 1,
-    }
-
-
-def _bundle_payload(value: FormalObjectValue) -> dict[str, Any] | list[dict[str, Any]]:
-    if isinstance(value, FormalObjectBase):
-        return value.model_dump(mode="json")
-    return [
-        item.model_dump(mode="json")
-        for item in value
-    ]
-
-
-def _ordered_object_keys(formal_objects: Mapping[str, FormalObjectValue]) -> tuple[str, ...]:
-    canonical_keys = [
-        object_key
-        for object_key in CANONICAL_FORMAL_OBJECT_KEYS
-        if object_key in formal_objects
-    ]
-    derived_keys = [
-        object_key
-        for object_key in formal_objects
-        if object_key not in CANONICAL_FORMAL_OBJECT_KEYS
-    ]
-    return (*canonical_keys, *derived_keys)
 
 
 __all__ = ["collect_formal_objects", "prepare_publish_bundle"]

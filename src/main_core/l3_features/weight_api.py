@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from main_core.common.types import CycleId
-from main_core.l3_features.multiplier_store import InMemoryMultiplierStore, MultiplierStore
+from main_core.l3_features.multiplier_store import (
+    InMemoryMultiplierStore,
+    MultiplierStore,
+    validate_multiplier_mapping,
+)
 
 _DEFAULT_MULTIPLIER_STORE = InMemoryMultiplierStore()
 
@@ -18,7 +22,8 @@ def apply_weight_multiplier(
 ) -> None:
     """Apply feature weight multiplier updates for a cycle."""
 
-    _resolve_store(store).put_multipliers(cycle_id, updates)
+    validated_updates = validate_multiplier_mapping(updates)
+    _resolve_store(store).put_multipliers(cycle_id, validated_updates)
 
 
 def get_feature_weight_multiplier(
@@ -28,7 +33,7 @@ def get_feature_weight_multiplier(
 ) -> dict[str, float]:
     """Return the currently visible feature weight multipliers for a cycle."""
 
-    return dict(_resolve_store(store).get_multipliers(cycle_id))
+    return validate_multiplier_mapping(_resolve_store(store).get_multipliers(cycle_id))
 
 
 def _resolve_store(store: MultiplierStore | None) -> MultiplierStore:

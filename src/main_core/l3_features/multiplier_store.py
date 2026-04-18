@@ -46,7 +46,7 @@ class InMemoryMultiplierStore:
     ) -> None:
         """Validate and store multiplier updates for the requested cycle."""
 
-        validated_updates = _validated_multiplier_copy(updates)
+        validated_updates = validate_multiplier_mapping(updates)
         cycle_key = str(cycle_id)
         with self._lock:
             current_multipliers = dict(self._multipliers_by_cycle.get(cycle_key, {}))
@@ -54,7 +54,9 @@ class InMemoryMultiplierStore:
             self._multipliers_by_cycle[cycle_key] = current_multipliers
 
 
-def _validated_multiplier_copy(updates: Mapping[str, float]) -> dict[str, float]:
+def validate_multiplier_mapping(updates: Mapping[str, float]) -> dict[str, float]:
+    """Return a validated float copy of feature multiplier updates."""
+
     invalid_keys = [
         feature_name
         for feature_name, multiplier in updates.items()
@@ -68,4 +70,4 @@ def _validated_multiplier_copy(updates: Mapping[str, float]) -> dict[str, float]
     return {feature_name: float(multiplier) for feature_name, multiplier in updates.items()}
 
 
-__all__ = ["InMemoryMultiplierStore", "MultiplierStore"]
+__all__ = ["InMemoryMultiplierStore", "MultiplierStore", "validate_multiplier_mapping"]

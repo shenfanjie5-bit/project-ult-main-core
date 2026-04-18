@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from main_core.common.protocols import GraphSnapshotError as _GraphSnapshotError
+from main_core.common.json_like import to_plain_json_like
+from main_core.common.protocols import (
+    GraphEnginePort,
+    GraphImpactRecord,
+    GraphRegimeContext,
+    GraphSnapshotError,
+)
 from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 from main_core.common.types import CycleId, EntityId
-
-if TYPE_CHECKING:
-    from main_core.common.protocols import GraphEnginePort, GraphImpactRecord
 
 
 def load_graph_features(
@@ -27,7 +30,7 @@ def load_graph_features(
     matching_records: list[GraphImpactRecord] = []
     for record in records:
         if str(record.cycle_id) != str(cycle_id):
-            raise _GraphSnapshotError(
+            raise GraphSnapshotError(
                 "graph impact snapshot contains records from a different cycle"
             )
         if str(record.entity_id) == str(entity_id):
@@ -36,14 +39,14 @@ def load_graph_features(
     if not matching_records:
         return {}
     if len(matching_records) > 1:
-        raise _GraphSnapshotError(
+        raise GraphSnapshotError(
             "graph impact snapshot contains duplicate records for entity"
         )
 
     record = matching_records[0]
     return {
         "snapshot_id": record.snapshot_id,
-        "features": _to_plain_json_like(record.features),
+        "features": to_plain_json_like(record.features),
     }
 
 
@@ -53,20 +56,14 @@ def merge_graph_features(
 ) -> FeatureSignalBundle:
     """Return a new feature bundle with graph features merged in."""
 
-    return bundle.model_copy(
-        update={"graph_features": _to_plain_json_like(graph_features)}
-    )
-
-
-def _to_plain_json_like(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(key): _to_plain_json_like(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_to_plain_json_like(item) for item in value]
-    return value
+    return bundle.model_copy(update={"graph_features": to_plain_json_like(graph_features)})
 
 
 __all__ = [
+    "GraphEnginePort",
+    "GraphImpactRecord",
+    "GraphRegimeContext",
+    "GraphSnapshotError",
     "load_graph_features",
     "merge_graph_features",
 ]

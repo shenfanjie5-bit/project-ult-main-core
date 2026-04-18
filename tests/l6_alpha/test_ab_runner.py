@@ -41,6 +41,17 @@ class RecordingAnalyzer:
         return self.results[entity_id]
 
 
+class FailingAnalyzer:
+    analyzer_type = "multi_agent_v1"
+
+    def analyze(
+        self,
+        entity_id: str,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        raise RuntimeError("role provider crashed")
+
+
 def test_run_ab_evaluation_computes_metrics_from_same_contexts(monkeypatch) -> None:
     def fail_if_l3_builder_is_called(*args, **kwargs):
         raise AssertionError("A/B runner must use supplied contexts")
@@ -84,8 +95,39 @@ def test_run_ab_evaluation_computes_metrics_from_same_contexts(monkeypatch) -> N
     assert report.baseline_inconclusive_count == 1
     assert report.challenger_inconclusive_count == 0
     assert report.inconclusive_count_delta == -1
+    assert report.baseline_failure_count == 0
+    assert report.challenger_failure_count == 0
+    assert report.failure_count_delta == 0
     assert report.cases[0].score_delta == pytest.approx(EXPECTED_OK_SCORE_MAE)
     assert report.cases[1].score_delta is None
+
+
+def test_run_ab_evaluation_rejects_empty_cases() -> None:
+    analyzer = RecordingAnalyzer("single_prompt_v1", {})
+
+    with pytest.raises(ValueError, match="cases"):
+        run_ab_evaluation([], baseline=analyzer, challenger=analyzer)
+
+
+def test_run_ab_evaluation_records_analyzer_failures_as_inconclusive() -> None:
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+        baseline=RecordingAnalyzer(
+            "single_prompt_v1",
+            {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+        ),
+        challenger=FailingAnalyzer(),
+    )
+
+    assert report.total_cases == 1
+    assert report.challenger_failure_count == 1
+    assert report.challenger_inconclusive_count == 1
+    assert report.cases[0].challenger_status == "inconclusive"
+    assert report.cases[0].challenger_error == "RuntimeError: role provider crashed"
+    assert report.cases[0].challenger_diagnostics == {
+        "error": "RuntimeError",
+        "message": "role provider crashed",
+    }
 
 
 def test_ab_report_json_is_parseable_and_excludes_context_models() -> None:

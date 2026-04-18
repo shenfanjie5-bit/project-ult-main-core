@@ -23,9 +23,12 @@ from main_core.l7_recommendation.override import (
     apply_override,
     find_override,
 )
-
-BUY_SCORE_THRESHOLD = 0.65
-REDUCE_SCORE_THRESHOLD = 0.35
+from main_core.l7_recommendation.rules import (
+    BUY_SCORE_THRESHOLD,
+    REDUCE_SCORE_THRESHOLD,
+    action_for_score,
+    rating_for_action,
+)
 
 
 def generate_recommendations(  # noqa: PLR0913
@@ -164,12 +167,12 @@ def _candidate_from_analysis(analysis: AlphaResultSnapshot) -> RecommendationSna
     if not math.isfinite(analysis.confidence):
         raise MainCoreError("ok analysis confidence must be finite")
 
-    action_type = _action_for_score(analysis.score)
+    action_type = action_for_score(analysis.score)
     return RecommendationSnapshot(
         cycle_id=analysis.cycle_id,
         entity_id=analysis.entity_id,
         action_type=action_type,
-        rating=_rating_for_action(action_type),
+        rating=rating_for_action(action_type),
         confidence=analysis.confidence,
         triggered_by="system",
         override_applied=False,
@@ -202,23 +205,6 @@ def _validate_gated_identity(
         raise MainCoreError("constraint gate must preserve recommendation cycle_id")
     if candidate.entity_id != entity_id:
         raise MainCoreError("constraint gate must preserve recommendation entity_id")
-
-
-def _action_for_score(score: float) -> str:
-    if score >= BUY_SCORE_THRESHOLD:
-        return "buy"
-    if score <= REDUCE_SCORE_THRESHOLD:
-        return "reduce"
-    return "hold"
-
-
-def _rating_for_action(action_type: str) -> str:
-    ratings = {
-        "buy": "A",
-        "hold": "B",
-        "reduce": "C",
-    }
-    return ratings[action_type]
 
 
 __all__ = [

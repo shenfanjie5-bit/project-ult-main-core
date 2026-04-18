@@ -21,6 +21,7 @@ from main_core.common.schemas import (
     RecommendationSnapshot,
     WorldStateSnapshot,
 )
+from main_core.l8_publish import CommittedFormalObject, ManifestWriteResult
 
 
 def _bundle_payload() -> dict[str, object]:
@@ -67,7 +68,18 @@ def test_feature_signal_bundle_rejects_non_positive_or_non_finite_multiplier(
     payload = _bundle_payload()
     payload["feature_weight_multiplier"] = {"momentum": multiplier}
 
-    with pytest.raises(ValidationError, match="finite and > 0"):
+    with pytest.raises(ValidationError):
+        FeatureSignalBundle(**payload)
+
+
+@pytest.mark.parametrize("feature_value", [float("nan"), float("inf")])
+def test_feature_signal_bundle_rejects_non_finite_feature_values(
+    feature_value: float,
+) -> None:
+    payload = _bundle_payload()
+    payload["feature_values"] = {"momentum": feature_value}
+
+    with pytest.raises(ValidationError):
         FeatureSignalBundle(**payload)
 
 
@@ -215,3 +227,132 @@ def test_all_schema_models_inherit_frozen_forbid_strict_base() -> None:
         assert model.model_config["frozen"] is True
         assert model.model_config["extra"] == "forbid"
         assert model.model_config["strict"] is True
+        assert model.model_config["allow_inf_nan"] is False
+
+
+def test_schema_contract_builds_one_valid_cycle_across_formal_objects() -> None:
+    cycle_id = "cycle_contract"
+    feature_bundle = FeatureSignalBundle(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        feature_values={"momentum": 0.42},
+        signal_values={},
+        graph_features={},
+        feature_weight_multiplier={"momentum": 1.0},
+    )
+    world_state = WorldStateSnapshot(
+        cycle_id=cycle_id,
+        baseline_regime="neutral",
+        llm_delta=0,
+        final_regime="neutral",
+        llm_rationale="contract fixture",
+        actual_model_used="static",
+        actual_provider="local",
+        fallback_path=[],
+    )
+    pool = OfficialAlphaPool(
+        cycle_id=cycle_id,
+        observation_pool_size=1,
+        official_alpha_pool_capacity=1,
+        selected_entities=["ENT_001"],
+        added_entities=["ENT_001"],
+        removed_entities=[],
+        freeze_reason_map={},
+    )
+    alpha = AlphaResultSnapshot(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        analyzer_type="single_prompt_v1",
+        score=0.72,
+        confidence=0.81,
+        rationale="quality and momentum are aligned",
+        similar_cases=[],
+        status="ok",
+    )
+    recommendation = RecommendationSnapshot(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        action_type="buy",
+        rating="A",
+        confidence=0.81,
+        triggered_by="system",
+        override_applied=False,
+        constraints_applied={},
+    )
+    committed = (
+        CommittedFormalObject(
+            object_key="world_state_snapshot",
+            ref=f"world_state_snapshot/{cycle_id}/ref",
+            snapshot_id="world-snapshot",
+            payload_hash="world-hash",
+            row_count=1,
+        ),
+        CommittedFormalObject(
+            object_key="official_alpha_pool",
+            ref=f"official_alpha_pool/{cycle_id}/ref",
+            snapshot_id="pool-snapshot",
+            payload_hash="pool-hash",
+            row_count=1,
+        ),
+        CommittedFormalObject(
+            object_key="alpha_result_snapshot",
+            ref=f"alpha_result_snapshot/{cycle_id}/ref",
+            snapshot_id="alpha-snapshot",
+            payload_hash="alpha-hash",
+            row_count=1,
+        ),
+        CommittedFormalObject(
+            object_key="recommendation_snapshot",
+            ref=f"recommendation_snapshot/{cycle_id}/ref",
+            snapshot_id="recommendation-snapshot",
+            payload_hash="recommendation-hash",
+            row_count=1,
+        ),
+    )
+    manifest = ManifestWriteResult(
+        manifest_ref="pg://cycle_publish_manifest/42",
+        manifest_version="v1",
+        table_snapshots={
+            committed_object.object_key: committed_object.snapshot_id
+            for committed_object in committed
+        },
+    )
+
+    bundle = PublishBundle(
+        cycle_id=cycle_id,
+        formal_objects={
+            "world_state_snapshot": {
+                "ref": committed[0].ref,
+                "payload": world_state.model_dump(mode="json"),
+                "count": 1,
+            },
+            "official_alpha_pool": {
+                "ref": committed[1].ref,
+                "payload": pool.model_dump(mode="json"),
+                "count": 1,
+            },
+            "alpha_result_snapshot": {
+                "ref": committed[2].ref,
+                "payload": [alpha.model_dump(mode="json")],
+                "count": 1,
+            },
+            "recommendation_snapshot": {
+                "ref": committed[3].ref,
+                "payload": [recommendation.model_dump(mode="json")],
+                "count": 1,
+            },
+        },
+        manifest_candidate={
+            "cycle_id": cycle_id,
+            "manifest_ref": manifest.manifest_ref,
+            "object_refs": {
+                committed_object.object_key: committed_object.ref
+                for committed_object in committed
+            },
+        },
+        audit_payload={"cycle_id": cycle_id},
+        retrospective_seed={"cycle_id": cycle_id},
+    )
+
+    assert feature_bundle.cycle_id == bundle.cycle_id
+    assert bundle.manifest_candidate["manifest_ref"] == "pg://cycle_publish_manifest/42"

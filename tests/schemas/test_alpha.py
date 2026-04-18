@@ -69,3 +69,21 @@ def test_alpha_result_rejects_inconclusive_with_score() -> None:
 
     with pytest.raises(ValidationError, match="score=None"):
         AlphaResultSnapshot(**payload)
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf")])
+def test_alpha_result_rejects_non_finite_score(score: float) -> None:
+    payload = _alpha_payload()
+    payload["score"] = score
+
+    with pytest.raises(ValidationError):
+        AlphaResultSnapshot(**payload)
+
+
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf")])
+def test_alpha_result_rejects_non_finite_confidence(confidence: float) -> None:
+    payload = _alpha_payload()
+    payload["confidence"] = confidence
+
+    with pytest.raises(ValidationError):
+        AlphaResultSnapshot(**payload)

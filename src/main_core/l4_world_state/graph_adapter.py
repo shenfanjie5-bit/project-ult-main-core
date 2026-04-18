@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from main_core.common.contexts import WorldStateInputs
+from main_core.common.json_like import to_plain_json_like
 from main_core.common.protocols import GraphEnginePort, GraphSnapshotError
 from main_core.common.types import CycleId
 
@@ -29,7 +30,7 @@ def load_graph_regime_context(
 
     return {
         "snapshot_id": context.snapshot_id,
-        "regime_context": _to_plain_json_like(context.regime_context),
+        "regime_context": to_plain_json_like(context.regime_context),
     }
 
 
@@ -44,17 +45,9 @@ def with_graph_impact(
             "cycle_id": inputs.cycle_id,
             "feature_bundle": inputs.feature_bundle,
             "macro_context": dict(inputs.macro_context),
-            "graph_impact": _to_plain_json_like(graph_impact) if graph_impact else {},
+            "graph_impact": to_plain_json_like(graph_impact) if graph_impact else {},
         }
     )
-
-
-def _to_plain_json_like(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(key): _to_plain_json_like(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_to_plain_json_like(item) for item in value]
-    return value
 
 
 __all__ = ["load_graph_regime_context", "with_graph_impact"]

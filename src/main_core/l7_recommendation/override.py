@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from main_core.common.errors import MainCoreError
 from main_core.common.schemas import OverrideRecord, RecommendationSnapshot
 from main_core.common.types import CycleId, EntityId
+from main_core.l7_recommendation.rules import rating_for_action
 
 
 class OverrideStore(Protocol):
@@ -56,7 +57,7 @@ def submit_override(
     """Validate, store, and return a human override record."""
 
     override = _coerce_override(override_input)
-    active_store = store or _DEFAULT_OVERRIDE_STORE
+    active_store = store if store is not None else _DEFAULT_OVERRIDE_STORE
     return active_store.save(override)
 
 
@@ -67,7 +68,7 @@ def find_override(
 ) -> OverrideRecord | None:
     """Return the first override matching a cycle/entity pair."""
 
-    for override in overrides:
+    for override in reversed(overrides):
         if override.cycle_id == cycle_id and override.entity_id == entity_id:
             return override
     return None
@@ -94,7 +95,7 @@ def apply_override(
         updates["rating"] = None
         updates["confidence"] = None
     else:
-        updates["rating"] = _rating_for_action(override.action_type)
+        updates["rating"] = rating_for_action(override.action_type)
 
     return candidate.model_copy(update=updates)
 
@@ -103,15 +104,6 @@ def _coerce_override(override_input: OverrideRecord | Mapping[str, Any]) -> Over
     if isinstance(override_input, OverrideRecord):
         return override_input.model_copy()
     return OverrideRecord.model_validate(dict(override_input))
-
-
-def _rating_for_action(action_type: str) -> str:
-    ratings = {
-        "buy": "A",
-        "hold": "B",
-        "reduce": "C",
-    }
-    return ratings[action_type]
 
 
 __all__ = [

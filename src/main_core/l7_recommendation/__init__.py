@@ -8,6 +8,7 @@ from main_core.l7_recommendation.override import (
     find_override,
     submit_override,
 )
+from main_core.l7_recommendation.rules import action_for_score, rating_for_action
 from main_core.l7_recommendation.service import generate_recommendations
 
 __all__ = [
@@ -15,7 +16,9 @@ __all__ = [
     "InMemoryOverrideStore",
     "OverrideStore",
     "apply_override",
+    "action_for_score",
     "find_override",
     "generate_recommendations",
+    "rating_for_action",
     "submit_override",
 ]

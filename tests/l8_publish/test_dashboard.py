@@ -10,7 +10,12 @@ import pytest
 from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import PublishBundle
 from main_core.l8_publish import build_dashboard_snapshot, prepare_publish_bundle
-from main_core.l8_publish.refs import WORLD_STATE_SNAPSHOT_KEY
+from main_core.l8_publish.refs import (
+    ALPHA_RESULT_SNAPSHOT_KEY,
+    OFFICIAL_ALPHA_POOL_KEY,
+    RECOMMENDATION_SNAPSHOT_KEY,
+    WORLD_STATE_SNAPSHOT_KEY,
+)
 from tests.l8_publish import FakeFormalObjectSource, RecordingPublishPort, pool
 
 
@@ -42,7 +47,10 @@ def test_build_dashboard_snapshot_happy_path() -> None:
 
 def test_build_dashboard_snapshot_rejects_missing_ref() -> None:
     bundle = _mutated_bundle(
-        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].pop("ref")
+        lambda payload: (
+            payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].pop("ref"),
+            payload["manifest_candidate"].pop("object_refs"),
+        )
     )
 
     with pytest.raises(ManifestPublishError, match="ref"):
@@ -57,6 +65,35 @@ def test_build_dashboard_snapshot_rejects_cycle_mismatch() -> None:
     )
 
     with pytest.raises(ManifestPublishError, match="cycle_id"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
+@pytest.mark.parametrize(
+    "object_key",
+    [
+        WORLD_STATE_SNAPSHOT_KEY,
+        OFFICIAL_ALPHA_POOL_KEY,
+        ALPHA_RESULT_SNAPSHOT_KEY,
+        RECOMMENDATION_SNAPSHOT_KEY,
+    ],
+)
+def test_build_dashboard_snapshot_rejects_stale_formal_object_ref(
+    object_key: str,
+) -> None:
+    bundle = _mutated_bundle(
+        lambda payload: (
+            payload["formal_objects"][object_key].__setitem__(
+                "ref",
+                f"{object_key}/cycle_other/ref",
+            ),
+            payload["manifest_candidate"]["object_refs"].__setitem__(
+                object_key,
+                f"{object_key}/cycle_other/ref",
+            ),
+        )
+    )
+
+    with pytest.raises(ManifestPublishError, match="requested cycle_id"):
         build_dashboard_snapshot("cycle_l8", bundle)
 
 

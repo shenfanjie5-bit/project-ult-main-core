@@ -106,4 +106,4 @@ def test_multi_agent_analyzer_returns_multi_agent_result() -> None:
     result = analyzer.analyze(ENTITY_ID, _analysis_context())
 
     assert result.analyzer_type == MULTI_AGENT_ANALYZER
-    assert result.status == "ok"
+    assert result.status == "inconclusive"

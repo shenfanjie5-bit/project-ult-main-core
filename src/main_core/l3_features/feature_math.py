@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 from math import isfinite
 
 from main_core.l1_l2_basis.models import MarketBar
 from main_core.l3_features.errors import InvalidMultiplierError
+from main_core.l3_features.multiplier_store import validate_multiplier_mapping
 
 
 def market_bar_feature_values(market_bar: MarketBar) -> dict[str, float]:
@@ -27,13 +29,16 @@ def apply_feature_weight_multiplier(
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Apply known feature multipliers and return weighted features plus effective weights."""
 
+    validated_multipliers = validate_multiplier_mapping(multipliers)
     effective_multipliers = {
-        feature_name: float(multipliers.get(feature_name, 1.0))
+        feature_name: float(validated_multipliers.get(feature_name, 1.0))
         for feature_name in feature_values
     }
     weighted_feature_values = {}
     for feature_name, feature_value in feature_values.items():
-        weighted_feature_value = feature_value * effective_multipliers[feature_name]
+        weighted_feature_value = float(
+            Decimal(str(feature_value)) * Decimal(str(effective_multipliers[feature_name]))
+        )
         if not isfinite(weighted_feature_value):
             raise InvalidMultiplierError(
                 "weighted feature values must be finite after applying multipliers"

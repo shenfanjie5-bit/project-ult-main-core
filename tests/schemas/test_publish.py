@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from main_core.common.schemas import OverrideRecord, PublishBundle
+from main_core.common.schemas import ManifestReference, OverrideRecord, PublishBundle
 
 
 def _publish_payload() -> dict[str, object]:
@@ -50,6 +50,56 @@ def test_publish_bundle_rejects_wrong_formal_objects_type() -> None:
     payload["formal_objects"] = []
 
     with pytest.raises(ValidationError):
+        PublishBundle(**payload)
+
+
+def test_manifest_reference_requires_manifest_anchor() -> None:
+    with pytest.raises(ValidationError, match="manifest_ref"):
+        ManifestReference(
+            cycle_id="cycle_001",
+            manifest_ref="",
+            object_refs={"recommendation_snapshot": "recommendation_snapshot/cycle_001/ref"},
+        )
+
+
+def test_publish_bundle_rejects_missing_manifest_anchor_when_refs_are_present() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        "recommendation_snapshot": {
+            "ref": "recommendation_snapshot/cycle_001/ref",
+            "payload": [],
+            "count": 0,
+        }
+    }
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "object_refs": {
+            "recommendation_snapshot": "recommendation_snapshot/cycle_001/ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="manifest_ref"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_stale_recommendation_reference() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        "recommendation_snapshot": {
+            "ref": "recommendation_snapshot/cycle_old/ref",
+            "payload": [],
+            "count": 0,
+        }
+    }
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "manifest_ref": "pg://cycle_publish_manifest/42",
+        "object_refs": {
+            "recommendation_snapshot": "recommendation_snapshot/cycle_001/ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="recommendation_snapshot.ref"):
         PublishBundle(**payload)
 
 

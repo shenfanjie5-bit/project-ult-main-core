@@ -14,7 +14,7 @@ from main_core.common.schemas.dashboard import DashboardSnapshot
 from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 from main_core.common.schemas.override import OverrideRecord
 from main_core.common.schemas.pool import OfficialAlphaPool
-from main_core.common.schemas.publish import PublishBundle
+from main_core.common.schemas.publish import ManifestReference, PublishBundle
 from main_core.common.schemas.recommendation import (
     ActionType,
     RecommendationSnapshot,
@@ -55,6 +55,7 @@ SCHEMA_CONTRACT_LAYER: Final = MappingProxyType(
         "TriggerSource": "l7_recommendation",
         "DashboardSnapshot": "l8_publish",
         "FormalReport": "l8_publish",
+        "ManifestReference": "l8_publish",
         "PublishBundle": "l8_publish",
     }
 )
@@ -97,6 +98,7 @@ __all__ = [
     "FormalObjectBase",
     "FormalReport",
     "LAYER_SCHEMA_IMPORT_POLICY",
+    "ManifestReference",
     "OfficialAlphaPool",
     "OverrideRecord",
     "PublishBundle",

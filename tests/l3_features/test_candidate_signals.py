@@ -23,6 +23,7 @@ from .conftest import FakeDataPlatformPort
 
 SCOPED_MULTIPLIER = 1.5
 UNSCOPED_MULTIPLIER = 0.75
+EXPECTED_LAYER_B_ADJUSTED_VALUE = 3.0
 
 
 @dataclass
@@ -177,6 +178,39 @@ def test_normalize_candidate_signals_rejects_duplicate_signal_records() -> None:
             entity_id=EntityId("ENT_A"),
             multipliers={},
         )
+
+
+def test_normalize_candidate_signals_ignores_duplicate_out_of_basis_records() -> None:
+    cycle_id = CycleId("cycle-layer-b")
+    records = (
+        CandidateSignalRecord(
+            cycle_id=cycle_id,
+            entity_id=EntityId("ENT_Z"),
+            signal_name="layer_b_score",
+            value=1.0,
+        ),
+        CandidateSignalRecord(
+            cycle_id=cycle_id,
+            entity_id=EntityId("ENT_Z"),
+            signal_name="layer_b_score",
+            value=2.0,
+        ),
+        CandidateSignalRecord(
+            cycle_id=cycle_id,
+            entity_id=EntityId("ENT_A"),
+            signal_name="layer_b_score",
+            value=3.0,
+        ),
+    )
+
+    normalized = normalize_candidate_signals(
+        records,
+        cycle_id=cycle_id,
+        entity_id=EntityId("ENT_A"),
+        multipliers={},
+    )
+
+    assert normalized["layer_b_score"]["adjusted_value"] == EXPECTED_LAYER_B_ADJUSTED_VALUE
 
 
 def test_normalize_candidate_signals_rejects_cycle_mismatch() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.schemas import AlphaResultSnapshot, FeatureSignalBundle, WorldStateSnapshot
@@ -50,6 +51,30 @@ class FailingAnalyzer:
         context: AlphaAnalysisContext,
     ) -> AlphaResultSnapshot:
         raise RuntimeError("role provider crashed")
+
+
+class InvalidTypeFailingAnalyzer:
+    analyzer_type = "experimental_v1"
+
+    def analyze(
+        self,
+        entity_id: str,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        raise RuntimeError("role provider crashed")
+
+
+class RaisingAnalyzerType:
+    @property
+    def analyzer_type(self) -> str:
+        raise RuntimeError("cannot inspect analyzer_type")
+
+    def analyze(
+        self,
+        entity_id: str,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        raise ValueError("provider failed before metadata")
 
 
 def test_run_ab_evaluation_computes_metrics_from_same_contexts(monkeypatch) -> None:
@@ -128,6 +153,30 @@ def test_run_ab_evaluation_records_analyzer_failures_as_inconclusive() -> None:
         "error": "RuntimeError",
         "message": "role provider crashed",
     }
+
+
+def test_run_ab_evaluation_rejects_invalid_failure_analyzer_type() -> None:
+    with pytest.raises(ValidationError, match="analyzer_type"):
+        run_ab_evaluation(
+            [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+            baseline=RecordingAnalyzer(
+                "single_prompt_v1",
+                {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+            ),
+            challenger=InvalidTypeFailingAnalyzer(),
+        )
+
+
+def test_run_ab_evaluation_reraises_original_failure_when_type_lookup_fails() -> None:
+    with pytest.raises(ValueError, match="provider failed before metadata"):
+        run_ab_evaluation(
+            [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+            baseline=RecordingAnalyzer(
+                "single_prompt_v1",
+                {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+            ),
+            challenger=RaisingAnalyzerType(),
+        )
 
 
 def test_ab_report_json_is_parseable_and_excludes_context_models() -> None:

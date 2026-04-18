@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -81,6 +82,70 @@ def test_feature_signal_bundle_rejects_non_finite_feature_values(
 
     with pytest.raises(ValidationError):
         FeatureSignalBundle(**payload)
+
+
+@pytest.mark.parametrize(
+    "bad_number",
+    [float("nan"), float("inf"), Decimal("NaN"), Decimal("Infinity")],
+)
+@pytest.mark.parametrize(
+    ("factory", "field_name"),
+    [
+        (
+            lambda bad_number: FeatureSignalBundle(
+                **{**_bundle_payload(), "signal_values": {"nested": bad_number}}
+            ),
+            "signal_values",
+        ),
+        (
+            lambda bad_number: FeatureSignalBundle(
+                **{**_bundle_payload(), "graph_features": {"nested": bad_number}}
+            ),
+            "graph_features",
+        ),
+        (
+            lambda bad_number: AlphaResultSnapshot(
+                cycle_id="cycle_001",
+                entity_id="ENT_001",
+                analyzer_type="multi_agent_v1",
+                score=0.72,
+                confidence=0.81,
+                rationale="quality and momentum are aligned",
+                similar_cases=[],
+                status="ok",
+                diagnostics={"role": {"score": bad_number}},
+            ),
+            "diagnostics",
+        ),
+        (
+            lambda bad_number: PublishBundle(
+                cycle_id="cycle_001",
+                formal_objects={"world_state": {"ref": "world_state_snapshot/cycle_001"}},
+                manifest_candidate={"snapshot_id": "snap_001"},
+                audit_payload={"quality": {"score": bad_number}},
+                retrospective_seed={"window": "1d"},
+            ),
+            "audit_payload",
+        ),
+        (
+            lambda bad_number: PublishBundle(
+                cycle_id="cycle_001",
+                formal_objects={"world_state": {"ref": "world_state_snapshot/cycle_001"}},
+                manifest_candidate={"snapshot_id": "snap_001"},
+                audit_payload={"actor": "system"},
+                retrospective_seed={"quality": {"score": bad_number}},
+            ),
+            "retrospective_seed",
+        ),
+    ],
+)
+def test_schema_any_payloads_reject_non_finite_numbers(
+    factory: Callable[[Any], FormalObjectBase],
+    field_name: str,
+    bad_number: Any,
+) -> None:
+    with pytest.raises(ValidationError, match=field_name):
+        factory(bad_number)
 
 
 def test_feature_signal_bundle_deep_freezes_nested_payload_containers() -> None:

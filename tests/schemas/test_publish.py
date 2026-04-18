@@ -82,6 +82,37 @@ def test_publish_bundle_rejects_missing_manifest_anchor_when_refs_are_present() 
         PublishBundle(**payload)
 
 
+def test_publish_bundle_rejects_manifest_anchor_without_object_refs() -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "manifest_ref": "pg://cycle_publish_manifest/42",
+    }
+
+    with pytest.raises(ValidationError, match="object_refs"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_object_refs_without_manifest_cycle() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        "recommendation_snapshot": {
+            "ref": "recommendation_snapshot/cycle_001/ref",
+            "payload": [],
+            "count": 0,
+        }
+    }
+    payload["manifest_candidate"] = {
+        "manifest_ref": "pg://cycle_publish_manifest/42",
+        "object_refs": {
+            "recommendation_snapshot": "recommendation_snapshot/cycle_001/ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="manifest_candidate.cycle_id"):
+        PublishBundle(**payload)
+
+
 def test_publish_bundle_rejects_stale_recommendation_reference() -> None:
     payload = _publish_payload()
     payload["formal_objects"] = {

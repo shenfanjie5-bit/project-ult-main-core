@@ -9,7 +9,7 @@ from pathlib import Path
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerInterface
-from main_core.common.schemas import AlphaResultSnapshot, AnalyzerType
+from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
 
 
@@ -278,11 +278,15 @@ def _run_analyzer(
     try:
         result = analyzer.analyze(case.entity_id, case.context)
     except Exception as exc:  # noqa: BLE001
+        try:
+            analyzer_type = analyzer.analyzer_type
+        except Exception:
+            raise exc from None
         return _AnalyzerRun(
             result=AlphaResultSnapshot(
                 cycle_id=case.context.cycle_id,
                 entity_id=case.entity_id,
-                analyzer_type=_safe_analyzer_type(analyzer),
+                analyzer_type=analyzer_type,
                 score=None,
                 confidence=0.0,
                 rationale=f"inconclusive: analyzer failed: {exc}",
@@ -298,13 +302,6 @@ def _run_analyzer(
         error=None,
         diagnostics=dict(result.diagnostics) if result.diagnostics else None,
     )
-
-
-def _safe_analyzer_type(analyzer: AnalyzerInterface) -> AnalyzerType:
-    analyzer_type = analyzer.analyzer_type
-    if analyzer_type in ("single_prompt_v1", "multi_agent_v1"):
-        return analyzer_type
-    return "single_prompt_v1"
 
 
 def _case_markdown_row(case: AbCaseResult) -> str:

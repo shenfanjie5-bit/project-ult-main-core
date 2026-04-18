@@ -21,9 +21,9 @@ from main_core.l6_alpha.single_prompt_analyzer import SinglePromptAnalyzer
 __all__ = [
     "AgentRoleConfig",
     "AlphaAnalyzerError",
+    "AlphaReasonerError",
     "AlphaReasonerPort",
     "AlphaReasonerResponse",
-    "AlphaReasonerError",
     "MultiAgentAnalyzer",
     "MultiAgentReasonerPort",
     "MultiAgentRoleResult",

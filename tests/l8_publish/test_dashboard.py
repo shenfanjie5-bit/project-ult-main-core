@@ -49,6 +49,7 @@ def test_build_dashboard_snapshot_rejects_missing_ref() -> None:
     bundle = _mutated_bundle(
         lambda payload: (
             payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].pop("ref"),
+            payload["manifest_candidate"].pop("manifest_ref"),
             payload["manifest_candidate"].pop("object_refs"),
         )
     )

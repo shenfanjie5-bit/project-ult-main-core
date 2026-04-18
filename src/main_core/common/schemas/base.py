@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
+from decimal import Decimal
+from math import isfinite
 from types import MappingProxyType
 from typing import Any, Self
 
@@ -60,6 +62,25 @@ def _thaw_value(value: Any) -> Any:
     return value
 
 
+def _validate_finite_number(value: Any, path: str) -> None:
+    if isinstance(value, float) and not isfinite(value):
+        raise ValueError(f"{path or 'payload'} must contain only finite numeric values")
+    if isinstance(value, Decimal) and not value.is_finite():
+        raise ValueError(f"{path or 'payload'} must contain only finite numeric values")
+
+
+def _validate_finite_numbers(value: Any, path: str = "") -> None:
+    _validate_finite_number(value, path)
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            _validate_finite_numbers(item, child_path)
+    elif isinstance(value, (list, tuple, frozenset, set)):
+        for index, item in enumerate(value):
+            child_path = f"{path}[{index}]" if path else f"[{index}]"
+            _validate_finite_numbers(item, child_path)
+
+
 class FormalObjectBase(BaseModel):
     """Frozen schema base for formal and runtime contract objects."""
 
@@ -75,6 +96,7 @@ class FormalObjectBase(BaseModel):
         """Recursively freeze validated container fields before sharing objects."""
 
         for field_name in type(self).model_fields:
+            _validate_finite_numbers(getattr(self, field_name), field_name)
             object.__setattr__(self, field_name, _freeze_value(getattr(self, field_name)))
         return self
 

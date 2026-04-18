@@ -50,9 +50,22 @@ class PublishBundle(FormalObjectBase):
             self.cycle_id,
         )
 
+        manifest_ref = self.manifest_candidate.get("manifest_ref")
         object_refs = self.manifest_candidate.get("object_refs")
-        if object_refs is None:
+        if manifest_ref is None and object_refs is None:
             return self
+        if object_refs is not None and self.manifest_candidate.get("cycle_id") is None:
+            raise ValueError(
+                "manifest_candidate.cycle_id must be set when object_refs is present"
+            )
+        if manifest_ref is not None and self.manifest_candidate.get("cycle_id") is None:
+            raise ValueError(
+                "manifest_candidate.cycle_id must be set when manifest_ref is present"
+            )
+        if object_refs is None:
+            raise ValueError(
+                "manifest_candidate.object_refs must be set when manifest_ref is present"
+            )
         if not isinstance(object_refs, Mapping):
             raise ValueError("manifest_candidate.object_refs must be a mapping")
         manifest_ref = ManifestReference.model_validate(

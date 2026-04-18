@@ -14,28 +14,22 @@ from main_core.l8_publish.refs import (
     OFFICIAL_ALPHA_POOL_KEY,
     RECOMMENDATION_SNAPSHOT_KEY,
     WORLD_STATE_SNAPSHOT_KEY,
-    formal_object_ref,
+    FormalObjectEntry,
+    list_formal_object_entry,
+    mapping_formal_object_entry,
 )
 
 DASHBOARD_SNAPSHOT_KEY = "dashboard_snapshot"
 
 _ACTION_TYPES = ("buy", "hold", "reduce", "inconclusive")
-_MISSING = object()
-
-
-@dataclass(frozen=True)
-class _FormalObjectEntry:
-    ref: str
-    payload: Mapping[str, Any] | tuple[Mapping[str, Any], ...]
-    count: int
 
 
 @dataclass(frozen=True)
 class _RequiredFormalObjects:
-    world_state: _FormalObjectEntry
-    pool: _FormalObjectEntry
-    alpha_results: _FormalObjectEntry
-    recommendations: _FormalObjectEntry
+    world_state: FormalObjectEntry
+    pool: FormalObjectEntry
+    alpha_results: FormalObjectEntry
+    recommendations: FormalObjectEntry
 
 
 def build_dashboard_snapshot(
@@ -65,10 +59,22 @@ def _extract_required_formal_objects(
         raise ManifestPublishError("publish bundle cycle_id must match requested cycle_id")
 
     return _RequiredFormalObjects(
-        world_state=_mapping_entry(bundle, WORLD_STATE_SNAPSHOT_KEY, cycle_id),
-        pool=_mapping_entry(bundle, OFFICIAL_ALPHA_POOL_KEY, cycle_id),
-        alpha_results=_list_entry(bundle, ALPHA_RESULT_SNAPSHOT_KEY, cycle_id),
-        recommendations=_list_entry(bundle, RECOMMENDATION_SNAPSHOT_KEY, cycle_id),
+        world_state=mapping_formal_object_entry(
+            bundle,
+            WORLD_STATE_SNAPSHOT_KEY,
+            cycle_id,
+        ),
+        pool=mapping_formal_object_entry(bundle, OFFICIAL_ALPHA_POOL_KEY, cycle_id),
+        alpha_results=list_formal_object_entry(
+            bundle,
+            ALPHA_RESULT_SNAPSHOT_KEY,
+            cycle_id,
+        ),
+        recommendations=list_formal_object_entry(
+            bundle,
+            RECOMMENDATION_SNAPSHOT_KEY,
+            cycle_id,
+        ),
     )
 
 
@@ -136,80 +142,6 @@ def _build_summary_cards(objects: _RequiredFormalObjects) -> dict[str, Any]:
             "entity_ids": override_entity_ids,
         },
     }
-
-
-def _mapping_entry(
-    bundle: PublishBundle,
-    object_key: str,
-    cycle_id: CycleId,
-) -> _FormalObjectEntry:
-    entry = _entry_mapping(bundle, object_key)
-    ref = formal_object_ref(bundle, object_key)
-    payload = entry.get("payload", _MISSING)
-    if not isinstance(payload, Mapping):
-        raise ManifestPublishError(f"{object_key}.payload must be a mapping")
-
-    count = _entry_count(entry, object_key)
-    if count != 1:
-        raise ManifestPublishError(f"{object_key}.count must be 1")
-    _ensure_payload_cycle(object_key, payload, cycle_id)
-    return _FormalObjectEntry(ref=ref, payload=dict(payload), count=count)
-
-
-def _list_entry(
-    bundle: PublishBundle,
-    object_key: str,
-    cycle_id: CycleId,
-) -> _FormalObjectEntry:
-    entry = _entry_mapping(bundle, object_key)
-    ref = formal_object_ref(bundle, object_key)
-    payload = entry.get("payload", _MISSING)
-    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
-        raise ManifestPublishError(f"{object_key}.payload must be a list")
-
-    payload_items: list[Mapping[str, Any]] = []
-    for index, item in enumerate(payload):
-        if not isinstance(item, Mapping):
-            raise ManifestPublishError(
-                f"{object_key}.payload[{index}] must be a mapping"
-            )
-        _ensure_payload_cycle(object_key, item, cycle_id)
-        payload_items.append(dict(item))
-
-    count = _entry_count(entry, object_key)
-    if count != len(payload_items):
-        raise ManifestPublishError(f"{object_key}.count must match payload length")
-    return _FormalObjectEntry(ref=ref, payload=tuple(payload_items), count=count)
-
-
-def _entry_mapping(bundle: PublishBundle, object_key: str) -> Mapping[str, Any]:
-    try:
-        entry = bundle.formal_objects[object_key]
-    except KeyError as exc:
-        raise ManifestPublishError(f"missing formal object entry {object_key}") from exc
-    if not isinstance(entry, Mapping):
-        raise ManifestPublishError(f"{object_key} formal object entry must be a mapping")
-    return entry
-
-
-def _entry_count(entry: Mapping[str, Any], object_key: str) -> int:
-    count = entry.get("count", _MISSING)
-    if (
-        not isinstance(count, int)
-        or isinstance(count, bool)
-        or count < 0
-    ):
-        raise ManifestPublishError(f"{object_key}.count must be a non-negative integer")
-    return count
-
-
-def _ensure_payload_cycle(
-    object_key: str,
-    payload: Mapping[str, Any],
-    cycle_id: CycleId,
-) -> None:
-    if payload.get("cycle_id") != str(cycle_id):
-        raise ManifestPublishError(f"{object_key}.payload cycle_id must match")
 
 
 def _as_mapping(

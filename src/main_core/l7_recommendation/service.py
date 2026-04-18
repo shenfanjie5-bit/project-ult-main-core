@@ -23,6 +23,7 @@ from main_core.l7_recommendation.override import (
     apply_override,
     find_override,
 )
+from main_core.l7_recommendation.rules import rating_for_action
 
 BUY_SCORE_THRESHOLD = 0.65
 REDUCE_SCORE_THRESHOLD = 0.35
@@ -169,7 +170,7 @@ def _candidate_from_analysis(analysis: AlphaResultSnapshot) -> RecommendationSna
         cycle_id=analysis.cycle_id,
         entity_id=analysis.entity_id,
         action_type=action_type,
-        rating=_rating_for_action(action_type),
+        rating=rating_for_action(action_type),
         confidence=analysis.confidence,
         triggered_by="system",
         override_applied=False,
@@ -210,16 +211,6 @@ def _action_for_score(score: float) -> str:
     if score <= REDUCE_SCORE_THRESHOLD:
         return "reduce"
     return "hold"
-
-
-def _rating_for_action(action_type: str) -> str:
-    ratings = {
-        "buy": "A",
-        "hold": "B",
-        "reduce": "C",
-    }
-    return ratings[action_type]
-
 
 __all__ = [
     "BUY_SCORE_THRESHOLD",

@@ -60,6 +60,18 @@ def test_build_dashboard_snapshot_rejects_cycle_mismatch() -> None:
         build_dashboard_snapshot("cycle_l8", bundle)
 
 
+def test_build_dashboard_snapshot_rejects_stale_formal_object_ref() -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].__setitem__(
+            "ref",
+            "world_state_snapshot/cycle_old/ref",
+        )
+    )
+
+    with pytest.raises(ManifestPublishError, match="requested cycle_id"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
 def test_build_dashboard_snapshot_keeps_inconclusive_recommendations_visible() -> None:
     dashboard = build_dashboard_snapshot("cycle_l8", _base_bundle()).model_dump(
         mode="json"
@@ -121,4 +133,4 @@ def _base_bundle(source: FakeFormalObjectSource | None = None) -> PublishBundle:
 def _mutated_bundle(mutator: Callable[[dict[str, Any]], None]) -> PublishBundle:
     payload = _base_bundle().model_dump(mode="python")
     mutator(payload)
-    return PublishBundle(**payload)
+    return PublishBundle.model_construct(**payload)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date
+from decimal import Decimal
 from sys import float_info
 from types import ModuleType
 
@@ -45,6 +46,18 @@ class FakeCandidateSignalPort:
         return self.records
 
 
+class InvalidReadMultiplierStore:
+    def get_multipliers(self, cycle_id: CycleId | str) -> dict[str, float]:
+        return {"close_price": float("inf")}
+
+    def put_multipliers(
+        self,
+        cycle_id: CycleId | str,
+        updates: dict[str, float],
+    ) -> None:
+        raise AssertionError("builder read path must not write multipliers")
+
+
 def test_feature_math_derives_market_features_and_applies_known_multipliers(
     cycle_id: CycleId,
 ) -> None:
@@ -78,6 +91,16 @@ def test_feature_math_derives_market_features_and_applies_known_multipliers(
         "volume": 1.0,
         "return_1d": 1.0,
     }
+
+
+def test_feature_math_uses_decimal_arithmetic_before_float_boundary() -> None:
+    weighted_features, effective_multipliers = apply_feature_weight_multiplier(
+        {"close_price": Decimal("0.1")},
+        {"close_price": Decimal("0.2")},
+    )
+
+    assert weighted_features == {"close_price": 0.02}
+    assert effective_multipliers == {"close_price": 0.2}
 
 
 def test_feature_math_omits_missing_return_1d(cycle_id: CycleId) -> None:
@@ -373,3 +396,21 @@ def test_build_feature_signal_bundle_rejects_ambiguous_multi_entity_cycle(
 
     bundles = build_feature_signal_bundles(cycle_id, data_port=port)
     assert [bundle.entity_id for bundle in bundles] == ["ENT_AAPL", "ENT_MSFT"]
+
+
+def test_build_feature_signal_bundle_validates_custom_multiplier_store_reads(
+    cycle_id: CycleId,
+    active_entity: EntityMasterRow,
+    market_bar: MarketBar,
+) -> None:
+    port = FakeDataPlatformPort(
+        market_bars=(market_bar,),
+        entity_master=(active_entity,),
+    )
+
+    with pytest.raises(InvalidMultiplierError, match="finite and > 0"):
+        build_feature_signal_bundles(
+            cycle_id,
+            data_port=port,
+            multiplier_store=InvalidReadMultiplierStore(),
+        )

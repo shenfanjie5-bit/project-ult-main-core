@@ -17,6 +17,7 @@ from main_core.l3_features import (
     GraphRegimeContext,
     GraphSnapshotError,
     build_feature_signal_bundles,
+    graph_adapter,
     load_graph_features,
     merge_graph_features,
 )
@@ -70,6 +71,13 @@ def test_graph_engine_port_is_runtime_checkable_and_read_only() -> None:
         for name in dir(port)
         if name.startswith(("write_", "commit_", "mutate_"))
     }
+
+
+def test_graph_adapter_keeps_deprecated_runtime_protocol_aliases() -> None:
+    assert graph_adapter.GraphEnginePort is GraphEnginePort
+    assert graph_adapter.GraphImpactRecord is GraphImpactRecord
+    assert graph_adapter.GraphRegimeContext is GraphRegimeContext
+    assert graph_adapter.GraphSnapshotError is GraphSnapshotError
 
 
 def test_load_graph_features_returns_empty_without_port_or_matching_record() -> None:

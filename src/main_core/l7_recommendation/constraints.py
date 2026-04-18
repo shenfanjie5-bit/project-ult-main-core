@@ -7,6 +7,7 @@ from typing import Any
 from main_core.common.contexts import RecommendationConstraintInputs
 from main_core.common.protocols import RecommendationConstraintProviderBase
 from main_core.common.schemas import RecommendationSnapshot
+from main_core.l7_recommendation.rules import rating_for_action
 
 
 class DefaultConstraintProvider(RecommendationConstraintProviderBase):
@@ -35,7 +36,7 @@ class DefaultConstraintProvider(RecommendationConstraintProviderBase):
                 "regime_gate",
                 "risk_off_buy_to_hold",
                 action_type="hold",
-                rating="B",
+                rating=rating_for_action("hold"),
             )
 
         return candidate

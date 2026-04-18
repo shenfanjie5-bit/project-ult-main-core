@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from main_core.common.schemas import OverrideRecord, PublishBundle
+from main_core.l8_publish.refs import WORLD_STATE_SNAPSHOT_KEY
 
 
 def _publish_payload() -> dict[str, object]:
@@ -50,6 +51,60 @@ def test_publish_bundle_rejects_wrong_formal_objects_type() -> None:
     payload["formal_objects"] = []
 
     with pytest.raises(ValidationError):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_stale_formal_object_ref() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        WORLD_STATE_SNAPSHOT_KEY: {
+            "ref": "world_state_snapshot/cycle_old/ref",
+            "payload": {"cycle_id": "cycle_001"},
+            "count": 1,
+        },
+    }
+
+    with pytest.raises(ValidationError, match="bundle.cycle_id"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_stale_manifest_object_ref() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        WORLD_STATE_SNAPSHOT_KEY: {
+            "ref": "world_state_snapshot/cycle_001/ref",
+            "payload": {"cycle_id": "cycle_001"},
+            "count": 1,
+        },
+    }
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "object_refs": {
+            WORLD_STATE_SNAPSHOT_KEY: "world_state_snapshot/cycle_old/ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="bundle.cycle_id"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_manifest_ref_that_disagrees_with_formal_entry() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {
+        WORLD_STATE_SNAPSHOT_KEY: {
+            "ref": "world_state_snapshot/cycle_001/ref",
+            "payload": {"cycle_id": "cycle_001"},
+            "count": 1,
+        },
+    }
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "object_refs": {
+            WORLD_STATE_SNAPSHOT_KEY: "world_state_snapshot/cycle_001/other_ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="formal_objects entry ref"):
         PublishBundle(**payload)
 
 

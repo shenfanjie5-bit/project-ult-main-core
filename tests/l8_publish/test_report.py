@@ -36,7 +36,6 @@ def test_build_formal_report_happy_path() -> None:
         "alpha_result_ref": "alpha_result_snapshot/cycle_l8/ref",
         "recommendation_ref": "recommendation_snapshot/cycle_l8/ref",
         "manifest_ref": "manifest/cycle_l8",
-        "audit_payload_ref": "audit_payload/cycle_l8",
     }
 
 
@@ -65,6 +64,19 @@ def test_build_formal_report_rejects_cycle_mismatch() -> None:
 
     with pytest.raises(ManifestPublishError, match="cycle_id"):
         build_formal_report("cycle_l8", bundle)
+
+
+def test_build_formal_report_allows_opaque_manifest_ref() -> None:
+    bundle = prepare_publish_bundle(
+        "cycle_l8",
+        source=FakeFormalObjectSource(),
+        publish_port=RecordingPublishPort(manifest_ref="pg://cycle_publish_manifest/42"),
+        derived_builders=(),
+    )
+
+    report = build_formal_report("cycle_l8", bundle)
+
+    assert report.appendix_refs["manifest_ref"] == "pg://cycle_publish_manifest/42"
 
 
 def test_build_formal_report_keeps_inconclusive_outcomes_visible() -> None:
@@ -125,4 +137,4 @@ def _base_bundle(source: FakeFormalObjectSource | None = None) -> PublishBundle:
 def _mutated_bundle(mutator: Callable[[dict[str, Any]], None]) -> PublishBundle:
     payload = _base_bundle().model_dump(mode="python")
     mutator(payload)
-    return PublishBundle(**payload)
+    return PublishBundle.model_construct(**payload)

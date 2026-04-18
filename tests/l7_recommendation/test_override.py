@@ -13,6 +13,7 @@ from main_core.l7_recommendation import (
     InMemoryOverrideStore,
     apply_override,
     find_override,
+    rating_for_action,
     submit_override,
 )
 
@@ -57,6 +58,18 @@ def test_submit_override_accepts_mapping_and_stores_validated_record() -> None:
         OverrideRecord.model_validate({**override.model_dump(), "action_type": "sell"})
 
 
+def test_submit_override_honors_explicit_falsey_store() -> None:
+    class FalseyOverrideStore(InMemoryOverrideStore):
+        def __len__(self) -> int:
+            return 0
+
+    store = FalseyOverrideStore()
+
+    override = submit_override(_override_payload(), store=store)
+
+    assert store.records == (override,)
+
+
 def test_submit_override_accepts_existing_record() -> None:
     store = InMemoryOverrideStore()
     override = OverrideRecord(**_override_payload(action_type="reduce"))
@@ -76,6 +89,23 @@ def test_find_override_returns_matching_cycle_entity_record() -> None:
     assert find_override([first, second], "cycle_l7", "ENT_Z") is None
 
 
+def test_find_override_uses_latest_submitted_at_for_duplicate_cycle_entity() -> None:
+    older = OverrideRecord(
+        **_override_payload(
+            action_type="buy",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        )
+    )
+    newer = OverrideRecord(
+        **_override_payload(
+            action_type="reduce",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC),
+        )
+    )
+
+    assert find_override([newer, older], "cycle_l7", "ENT_A") == newer
+
+
 def test_apply_override_sets_human_audit_fields_and_keeps_constraints() -> None:
     override = OverrideRecord(**_override_payload(action_type="reduce"))
 
@@ -93,3 +123,9 @@ def test_apply_override_rejects_non_matching_override() -> None:
 
     with pytest.raises(MainCoreError, match="entity_id"):
         apply_override(_candidate(), override)
+
+
+def test_rating_for_action_shared_mapping() -> None:
+    assert rating_for_action("buy") == "A"
+    assert rating_for_action("hold") == "B"
+    assert rating_for_action("reduce") == "C"

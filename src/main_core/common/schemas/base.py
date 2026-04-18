@@ -63,7 +63,12 @@ def _thaw_value(value: Any) -> Any:
 class FormalObjectBase(BaseModel):
     """Frozen schema base for formal and runtime contract objects."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    model_config = ConfigDict(
+        allow_inf_nan=False,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+    )
 
     @model_validator(mode="after")
     def freeze_nested_containers(self) -> Self:

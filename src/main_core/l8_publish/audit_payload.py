@@ -28,6 +28,16 @@ def build_audit_payload(
 
     alpha_results = _payload_list(formal_objects, ALPHA_RESULT_SNAPSHOT_KEY)
     recommendations = _payload_list(formal_objects, RECOMMENDATION_SNAPSHOT_KEY)
+    alpha_inconclusive_count = sum(
+        1
+        for alpha_result in alpha_results
+        if alpha_result.get("status") == "inconclusive"
+    )
+    recommendation_inconclusive_count = sum(
+        1
+        for recommendation in recommendations
+        if recommendation.get("action_type") == "inconclusive"
+    )
 
     return {
         "cycle_id": str(cycle_id),
@@ -35,11 +45,9 @@ def build_audit_payload(
         "commit_refs": _commit_refs(committed_objects),
         "manifest_ref": manifest.manifest_ref,
         "manifest_version": manifest.manifest_version,
-        "inconclusive_count": sum(
-            1
-            for alpha_result in alpha_results
-            if alpha_result.get("status") == "inconclusive"
-        ),
+        "inconclusive_count": recommendation_inconclusive_count,
+        "alpha_inconclusive_count": alpha_inconclusive_count,
+        "recommendation_inconclusive_count": recommendation_inconclusive_count,
         "override_applied_count": sum(
             1
             for recommendation in recommendations

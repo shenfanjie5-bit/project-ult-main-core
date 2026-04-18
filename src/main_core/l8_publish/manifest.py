@@ -14,7 +14,7 @@ from main_core.l8_publish.publish_port import (
     FormalObjectValue,
     ManifestWriteResult,
 )
-from main_core.l8_publish.refs import CANONICAL_FORMAL_OBJECT_KEYS
+from main_core.l8_publish.refs import ordered_formal_object_keys
 
 
 def commit_formal_objects(
@@ -25,7 +25,7 @@ def commit_formal_objects(
     """Commit formal object classes in stable order before manifest publication."""
 
     committed_objects: list[CommittedFormalObject] = []
-    for object_key in _ordered_object_keys(formal_objects):
+    for object_key in ordered_formal_object_keys(formal_objects):
         formal_object = formal_objects[object_key]
         payload = _commit_payload(formal_object)
         expected_row_count = _expected_row_count(formal_object)
@@ -116,21 +116,6 @@ def build_manifest_candidate(
             }
         )
     return candidate
-
-
-def _ordered_object_keys(formal_objects: Mapping[str, FormalObjectValue]) -> tuple[str, ...]:
-    canonical_keys = [
-        object_key
-        for object_key in CANONICAL_FORMAL_OBJECT_KEYS
-        if object_key in formal_objects
-    ]
-    derived_keys = [
-        object_key
-        for object_key in formal_objects
-        if object_key not in CANONICAL_FORMAL_OBJECT_KEYS
-    ]
-    return (*canonical_keys, *derived_keys)
-
 
 def _commit_payload(value: FormalObjectValue) -> Mapping[str, Any]:
     if isinstance(value, FormalObjectBase):

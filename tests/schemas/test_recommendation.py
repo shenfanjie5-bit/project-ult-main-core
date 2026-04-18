@@ -50,3 +50,11 @@ def test_recommendation_rejects_inconclusive_with_confidence() -> None:
 
     with pytest.raises(ValidationError, match="confidence=None"):
         RecommendationSnapshot(**payload)
+
+
+def test_recommendation_rejects_non_finite_confidence() -> None:
+    payload = _recommendation_payload()
+    payload["confidence"] = float("nan")
+
+    with pytest.raises(ValidationError):
+        RecommendationSnapshot(**payload)

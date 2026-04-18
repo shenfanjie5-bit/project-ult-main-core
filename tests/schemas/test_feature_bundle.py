@@ -59,7 +59,7 @@ def test_feature_signal_bundle_missing_field_fails() -> None:
 
 @pytest.mark.parametrize(
     "multiplier",
-    [0.0, -0.1, float("inf")],
+    [0.0, -0.1],
 )
 def test_feature_signal_bundle_rejects_non_positive_or_non_finite_multiplier(
     multiplier: float,
@@ -68,6 +68,28 @@ def test_feature_signal_bundle_rejects_non_positive_or_non_finite_multiplier(
     payload["feature_weight_multiplier"] = {"momentum": multiplier}
 
     with pytest.raises(ValidationError, match="finite and > 0"):
+        FeatureSignalBundle(**payload)
+
+
+@pytest.mark.parametrize("multiplier", [float("nan"), float("inf")])
+def test_feature_signal_bundle_rejects_non_finite_multiplier(
+    multiplier: float,
+) -> None:
+    payload = _bundle_payload()
+    payload["feature_weight_multiplier"] = {"momentum": multiplier}
+
+    with pytest.raises(ValidationError):
+        FeatureSignalBundle(**payload)
+
+
+@pytest.mark.parametrize("feature_value", [float("nan"), float("inf")])
+def test_feature_signal_bundle_rejects_non_finite_feature_values(
+    feature_value: float,
+) -> None:
+    payload = _bundle_payload()
+    payload["feature_values"] = {"momentum": feature_value}
+
+    with pytest.raises(ValidationError):
         FeatureSignalBundle(**payload)
 
 
@@ -215,3 +237,4 @@ def test_all_schema_models_inherit_frozen_forbid_strict_base() -> None:
         assert model.model_config["frozen"] is True
         assert model.model_config["extra"] == "forbid"
         assert model.model_config["strict"] is True
+        assert model.model_config["allow_inf_nan"] is False

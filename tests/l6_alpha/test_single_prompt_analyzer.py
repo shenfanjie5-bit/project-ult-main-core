@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError, MainCoreError
 from main_core.common.schemas import AlphaResultSnapshot
-from main_core.l6_alpha import AlphaReasonerResponse, SinglePromptAnalyzer
+from main_core.l6_alpha import AlphaReasonerError, AlphaReasonerResponse, SinglePromptAnalyzer
 from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
 
 EXPECTED_FEATURE_MOMENTUM = 4.2
@@ -127,6 +128,65 @@ def test_single_prompt_analyzer_propagates_main_core_infrastructure_errors(
 
     with pytest.raises(MainCoreError, match="reasoner unavailable"):
         analyzer.analyze("ENT_A", analysis_context)
+
+
+def test_single_prompt_analyzer_wraps_unknown_provider_errors(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    analyzer = SinglePromptAnalyzer(
+        RecordingReasonerPort(error=RuntimeError("provider exploded")),
+    )
+
+    with pytest.raises(AlphaReasonerError, match="provider exploded"):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value", "match"),
+    [
+        ("score", "0.7", "score"),
+        ("confidence", True, "confidence"),
+        ("confidence", 1.2, "confidence"),
+        ("rationale", " ", "rationale"),
+    ],
+)
+def test_single_prompt_analyzer_rejects_malformed_successful_reasoner_output(
+    analysis_context: AlphaAnalysisContext,
+    field_name: str,
+    field_value: object,
+    match: str,
+) -> None:
+    response_payload = {
+        "score": 0.5,
+        "confidence": 0.6,
+        "rationale": "usable answer",
+        "similar_cases": [],
+    }
+    response_payload[field_name] = field_value
+    analyzer = SinglePromptAnalyzer(
+        RecordingReasonerPort(AlphaReasonerResponse(**response_payload)),
+    )
+
+    with pytest.raises(AlphaReasonerError, match=match):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    "context_update",
+    [
+        {"cycle_id": "cycle_other"},
+        {"entity_id": "ENT_OTHER"},
+    ],
+)
+def test_alpha_analysis_context_rejects_upstream_consistency_mismatch(
+    analysis_context: AlphaAnalysisContext,
+    context_update: dict[str, object],
+) -> None:
+    payload = analysis_context.model_dump(mode="python")
+    payload.update(context_update)
+
+    with pytest.raises(ValidationError):
+        AlphaAnalysisContext(**payload)
 
 
 def test_single_prompt_analyzer_does_not_reapply_feature_multipliers(

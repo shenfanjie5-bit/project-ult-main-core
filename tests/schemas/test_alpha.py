@@ -69,3 +69,21 @@ def test_alpha_result_rejects_inconclusive_with_score() -> None:
 
     with pytest.raises(ValidationError, match="score=None"):
         AlphaResultSnapshot(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("score", float("nan")),
+        ("confidence", float("inf")),
+    ],
+)
+def test_alpha_result_rejects_non_finite_numeric_fields(
+    field_name: str,
+    field_value: float,
+) -> None:
+    payload = _alpha_payload()
+    payload[field_name] = field_value
+
+    with pytest.raises(ValidationError):
+        AlphaResultSnapshot(**payload)

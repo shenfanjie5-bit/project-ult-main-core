@@ -42,6 +42,23 @@ def test_official_alpha_pool_rejects_selected_entities_over_capacity() -> None:
         OfficialAlphaPool(**payload)
 
 
+def test_official_alpha_pool_rejects_negative_observation_pool_size() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = -1
+
+    with pytest.raises(ValidationError):
+        OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_rejects_selected_entities_over_observation_size() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = 1
+    payload["official_alpha_pool_capacity"] = 2
+
+    with pytest.raises(ValidationError, match="observation_pool_size"):
+        OfficialAlphaPool(**payload)
+
+
 def test_official_alpha_pool_selected_entities_cannot_mutate_past_capacity() -> None:
     payload = _pool_payload()
     payload["official_alpha_pool_capacity"] = 1

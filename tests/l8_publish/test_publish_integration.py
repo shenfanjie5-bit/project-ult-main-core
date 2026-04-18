@@ -125,6 +125,8 @@ def test_publish_consumes_current_l7_output_without_previous_recommendations() -
     assert recommendation_payload[1]["action_type"] == "inconclusive"
     assert bundle_payload["audit_payload"]["override_applied_count"] == 1
     assert bundle_payload["audit_payload"]["inconclusive_count"] == 1
+    assert bundle_payload["audit_payload"]["alpha_inconclusive_count"] == 1
+    assert bundle_payload["audit_payload"]["recommendation_inconclusive_count"] == 1
 
     serialized_bundle = json.dumps(bundle_payload, sort_keys=True)
     assert "previous_recommendation" not in serialized_bundle

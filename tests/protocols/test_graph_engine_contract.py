@@ -52,8 +52,12 @@ def test_l3_graph_exports_are_compatibility_aliases() -> None:
     assert l3_features.GraphSnapshotError is GraphSnapshotError
 
 
-def test_l3_adapter_only_exports_adapter_helpers() -> None:
+def test_l3_adapter_exports_adapter_helpers_and_deprecated_runtime_aliases() -> None:
     assert set(l3_graph_adapter.__all__) == {
+        "GraphEnginePort",
+        "GraphImpactRecord",
+        "GraphRegimeContext",
+        "GraphSnapshotError",
         "load_graph_features",
         "merge_graph_features",
     }

@@ -13,7 +13,7 @@ from main_core.common.errors import InconclusiveError, MainCoreError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
-from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
+from main_core.l6_alpha.errors import AlphaAnalyzerError
 
 DEFAULT_MULTI_AGENT_ROLES: tuple[str, ...] = ("fundamental", "technical", "risk")
 
@@ -86,7 +86,7 @@ class StaticMultiAgentReasonerPort:
         role: AgentRoleConfig,
         payload: Mapping[str, Any],
     ) -> MultiAgentRoleResult:
-        """Return a configured role result or a stable zero-score default."""
+        """Return a configured role result or an explicit unconfigured-role failure."""
 
         self.calls.append((entity_id, context, role, payload))
         if role.name in self.role_results:
@@ -94,10 +94,12 @@ class StaticMultiAgentReasonerPort:
 
         return MultiAgentRoleResult(
             role=role.name,
-            score=0.0,
+            score=None,
             confidence=0.0,
-            rationale=f"static {role.name} alpha analysis",
+            rationale=f"static {role.name} alpha analysis is not configured",
             evidence={"role": role.name},
+            task_failed=True,
+            failure_reason="static multi-agent role result is not configured",
         )
 
 
@@ -132,6 +134,7 @@ def aggregate_role_results(
 
     role_weight_map = _role_weight_map(roles)
     result_map = _role_result_map(role_results, role_weight_map)
+    _ensure_exact_role_coverage(result_map, role_weight_map)
     failed_results = tuple(result for result in result_map.values() if result.task_failed)
     healthy_results = tuple(
         sorted(
@@ -149,6 +152,7 @@ def aggregate_role_results(
                 "confidence": 0.0,
                 "rationale": _all_failed_rationale(failed_results, roles),
                 "status": "inconclusive",
+                "diagnostics": _role_diagnostics(failed_results),
             },
         )
 
@@ -170,6 +174,7 @@ def aggregate_role_results(
             "confidence": weighted_confidence,
             "rationale": _aggregate_rationale(healthy_results, failed_results),
             "status": "ok",
+            "diagnostics": _role_diagnostics((*healthy_results, *failed_results)),
         },
     )
 
@@ -224,6 +229,10 @@ class MultiAgentAnalyzer(AnalyzerBase):
                 )
             except MainCoreError:
                 raise
+            if result.role != role.name:
+                raise AlphaAnalyzerError(
+                    "role result role must match the configured role name"
+                )
             role_results.append(result)
 
         return aggregate_role_results(
@@ -248,6 +257,7 @@ def _multi_agent_result(
         rationale=fields["rationale"],
         similar_cases=[dict(case) for case in context.similar_cases],
         status=fields["status"],
+        diagnostics=dict(fields.get("diagnostics", {})),
     )
 
 
@@ -275,6 +285,17 @@ def _role_result_map(
             raise AlphaAnalyzerError(f"duplicate role result: {result.role}")
         result_map[result.role] = result
     return result_map
+
+
+def _ensure_exact_role_coverage(
+    result_map: Mapping[str, MultiAgentRoleResult],
+    role_weight_map: Mapping[str, float],
+) -> None:
+    missing_roles = sorted(set(role_weight_map) - set(result_map))
+    if missing_roles:
+        raise AlphaAnalyzerError(
+            "missing multi-agent role results: " + ", ".join(missing_roles)
+        )
 
 
 def _aggregate_rationale(
@@ -308,6 +329,31 @@ def _all_failed_rationale(
         role_names = ", ".join(sorted(role.name for role in roles))
         failures = f"no successful role results for roles: {role_names}"
     return f"inconclusive: all multi-agent roles failed: {failures}"
+
+
+def _role_diagnostics(
+    role_results: Sequence[MultiAgentRoleResult],
+) -> dict[str, Any]:
+    diagnostics = []
+    failed_roles = []
+    for result in sorted(role_results, key=lambda role_result: role_result.role):
+        if result.task_failed:
+            failed_roles.append(result.role)
+        diagnostics.append(
+            {
+                "role": result.role,
+                "status": "failed" if result.task_failed else "ok",
+                "score": result.score,
+                "confidence": result.confidence,
+                "rationale": result.rationale,
+                "failure_reason": result.failure_reason,
+                "evidence": _plain_value(result.evidence),
+            }
+        )
+    return {
+        "role_diagnostics": diagnostics,
+        "failed_roles": failed_roles,
+    }
 
 
 def _plain_value(value: Any) -> Any:

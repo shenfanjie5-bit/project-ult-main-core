@@ -110,6 +110,83 @@ def test_ab_report_json_is_parseable_and_excludes_context_models() -> None:
     assert "feature_bundle" not in json.dumps(payload)
 
 
+def test_ab_report_json_serializes_role_diagnostics() -> None:
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+        baseline=RecordingAnalyzer(
+            "multi_agent_v1",
+            {
+                "ENT_A": _alpha_result("ENT_A", "multi_agent_v1", 0.5, 0.7, "ok")
+                .model_copy(
+                    update={
+                        "diagnostics": {
+                            "role_diagnostics": [
+                                {
+                                    "role": "risk",
+                                    "score": 0.5,
+                                    "evidence": {"metric": "volatility"},
+                                }
+                            ]
+                        }
+                    }
+                )
+            },
+        ),
+        challenger=RecordingAnalyzer(
+            "single_prompt_v1",
+            {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.6, 0.8, "ok")},
+        ),
+    )
+
+    payload = json.loads(format_ab_report_json(report))
+
+    assert payload["cases"][0]["baseline_diagnostics"]["role_diagnostics"] == [
+        {
+            "role": "risk",
+            "score": 0.5,
+            "evidence": {"metric": "volatility"},
+        }
+    ]
+
+
+def test_run_ab_evaluation_rejects_empty_cases() -> None:
+    with pytest.raises(ValueError, match="cases"):
+        run_ab_evaluation(
+            [],
+            baseline=RecordingAnalyzer("single_prompt_v1", {}),
+            challenger=RecordingAnalyzer("multi_agent_v1", {}),
+        )
+
+
+def test_run_ab_evaluation_records_analyzer_failures_instead_of_aborting() -> None:
+    class FailingAnalyzer:
+        analyzer_type = "multi_agent_v1"
+
+        def analyze(
+            self,
+            entity_id: str,
+            context: AlphaAnalysisContext,
+        ) -> AlphaResultSnapshot:
+            raise RuntimeError("role provider exploded")
+
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+        baseline=RecordingAnalyzer(
+            "single_prompt_v1",
+            {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+        ),
+        challenger=FailingAnalyzer(),
+    )
+
+    assert report.total_cases == 1
+    assert report.challenger_failure_count == 1
+    assert report.challenger_inconclusive_count == 1
+    assert "role provider exploded" in report.cases[0].challenger_error
+    markdown = format_ab_report_markdown(report)
+    assert "challenger_error" in markdown
+    assert "role provider exploded" in markdown
+
+
 def test_ab_report_markdown_uses_stable_summary_and_case_tables() -> None:
     report = run_ab_evaluation(
         [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],

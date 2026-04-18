@@ -179,6 +179,32 @@ def test_normalize_candidate_signals_rejects_duplicate_signal_records() -> None:
         )
 
 
+def test_normalize_candidate_signals_ignores_duplicate_records_for_other_entities() -> None:
+    cycle_id = CycleId("cycle-layer-b")
+
+    normalized = normalize_candidate_signals(
+        (
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=EntityId("ENT_Z"),
+                signal_name="layer_b_score",
+                value=1.0,
+            ),
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=EntityId("ENT_Z"),
+                signal_name="layer_b_score",
+                value=2.0,
+            ),
+        ),
+        cycle_id=cycle_id,
+        entity_id=EntityId("ENT_A"),
+        multipliers={},
+    )
+
+    assert normalized == {}
+
+
 def test_normalize_candidate_signals_rejects_cycle_mismatch() -> None:
     with pytest.raises(CandidateSignalError, match="cycle_id"):
         normalize_candidate_signals(

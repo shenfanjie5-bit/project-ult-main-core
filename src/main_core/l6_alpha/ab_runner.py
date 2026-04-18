@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerInterface
+from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
 
 
@@ -42,6 +44,10 @@ class AbCaseResult:
     score_delta: float | None
     confidence_delta: float
     status_matches: bool
+    baseline_error: str | None
+    challenger_error: str | None
+    baseline_diagnostics: Mapping[str, Any]
+    challenger_diagnostics: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,8 @@ class AbEvaluationReport:
     baseline_inconclusive_count: int
     challenger_inconclusive_count: int
     inconclusive_count_delta: int
+    baseline_failure_count: int
+    challenger_failure_count: int
     cases: tuple[AbCaseResult, ...]
 
 
@@ -68,16 +76,21 @@ def run_ab_evaluation(
 ) -> AbEvaluationReport:
     """Run baseline and challenger analyzers on the same supplied contexts."""
 
+    if not cases:
+        raise ValueError("cases must not be empty")
+
     case_results: list[AbCaseResult] = []
     score_abs_deltas: list[float] = []
     confidence_abs_deltas: list[float] = []
     status_match_count = 0
     baseline_inconclusive_count = 0
     challenger_inconclusive_count = 0
+    baseline_failure_count = 0
+    challenger_failure_count = 0
 
     for case in cases:
-        baseline_result = baseline.analyze(case.entity_id, case.context)
-        challenger_result = challenger.analyze(case.entity_id, case.context)
+        baseline_result = _run_analyzer(baseline, case)
+        challenger_result = _run_analyzer(challenger, case)
 
         status_matches = baseline_result.status == challenger_result.status
         if status_matches:
@@ -86,6 +99,10 @@ def run_ab_evaluation(
             baseline_inconclusive_count += 1
         if challenger_result.status == "inconclusive":
             challenger_inconclusive_count += 1
+        if baseline_result.error is not None:
+            baseline_failure_count += 1
+        if challenger_result.error is not None:
+            challenger_failure_count += 1
 
         score_delta: float | None = None
         if baseline_result.score is not None and challenger_result.score is not None:
@@ -111,6 +128,10 @@ def run_ab_evaluation(
                 score_delta=score_delta,
                 confidence_delta=confidence_delta,
                 status_matches=status_matches,
+                baseline_error=baseline_result.error,
+                challenger_error=challenger_result.error,
+                baseline_diagnostics=baseline_result.diagnostics,
+                challenger_diagnostics=challenger_result.diagnostics,
             )
         )
 
@@ -129,6 +150,8 @@ def run_ab_evaluation(
         inconclusive_count_delta=(
             challenger_inconclusive_count - baseline_inconclusive_count
         ),
+        baseline_failure_count=baseline_failure_count,
+        challenger_failure_count=challenger_failure_count,
         cases=tuple(case_results),
     )
 
@@ -152,6 +175,8 @@ def format_ab_report_markdown(report: AbEvaluationReport) -> str:
         ("baseline_inconclusive_count", report.baseline_inconclusive_count),
         ("challenger_inconclusive_count", report.challenger_inconclusive_count),
         ("inconclusive_count_delta", report.inconclusive_count_delta),
+        ("baseline_failure_count", report.baseline_failure_count),
+        ("challenger_failure_count", report.challenger_failure_count),
     ]
     lines = [
         "# L6 A/B Evaluation",
@@ -170,9 +195,10 @@ def format_ab_report_markdown(report: AbEvaluationReport) -> str:
             (
                 "| case_id | entity_id | baseline_analyzer_type | "
                 "challenger_analyzer_type | baseline_status | challenger_status | "
-                "score_delta | confidence_delta | status_matches |"
+                "score_delta | confidence_delta | status_matches | "
+                "baseline_error | challenger_error |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     lines.extend(_case_markdown_row(case) for case in report.cases)
@@ -206,6 +232,8 @@ def _report_payload(report: AbEvaluationReport) -> dict[str, object]:
         "baseline_inconclusive_count": report.baseline_inconclusive_count,
         "challenger_inconclusive_count": report.challenger_inconclusive_count,
         "inconclusive_count_delta": report.inconclusive_count_delta,
+        "baseline_failure_count": report.baseline_failure_count,
+        "challenger_failure_count": report.challenger_failure_count,
         "cases": [_case_payload(case) for case in report.cases],
     }
 
@@ -225,6 +253,10 @@ def _case_payload(case: AbCaseResult) -> dict[str, object]:
         "score_delta": case.score_delta,
         "confidence_delta": case.confidence_delta,
         "status_matches": case.status_matches,
+        "baseline_error": case.baseline_error,
+        "challenger_error": case.challenger_error,
+        "baseline_diagnostics": case.baseline_diagnostics,
+        "challenger_diagnostics": case.challenger_diagnostics,
     }
 
 
@@ -239,8 +271,59 @@ def _case_markdown_row(case: AbCaseResult) -> str:
         _format_value(case.score_delta),
         _format_value(case.confidence_delta),
         case.status_matches,
+        case.baseline_error,
+        case.challenger_error,
     ]
     return "| " + " | ".join(_escape_markdown(value) for value in values) + " |"
+
+
+@dataclass(frozen=True)
+class _AnalyzerOutcome:
+    analyzer_type: str
+    status: str
+    score: float | None
+    confidence: float
+    error: str | None
+    diagnostics: Mapping[str, Any]
+
+
+def _run_analyzer(
+    analyzer: AnalyzerInterface,
+    case: AbEvaluationCase,
+) -> _AnalyzerOutcome:
+    try:
+        result = analyzer.analyze(case.entity_id, case.context)
+    except Exception as exc:  # noqa: BLE001 - A/B reports must capture analyzer failures.
+        return _AnalyzerOutcome(
+            analyzer_type=analyzer.analyzer_type,
+            status="inconclusive",
+            score=None,
+            confidence=0.0,
+            error=f"{type(exc).__name__}: {exc}",
+            diagnostics={},
+        )
+    return _outcome_from_result(result)
+
+
+def _outcome_from_result(result: AlphaResultSnapshot) -> _AnalyzerOutcome:
+    return _AnalyzerOutcome(
+        analyzer_type=result.analyzer_type,
+        status=result.status,
+        score=result.score,
+        confidence=result.confidence,
+        error=None,
+        diagnostics=_plain_json_like(result.diagnostics),
+    )
+
+
+def _plain_json_like(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_json_like(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_plain_json_like(item) for item in value]
+    if isinstance(value, frozenset | set):
+        return sorted(_plain_json_like(item) for item in value)
+    return value
 
 
 def _mean(values: Sequence[float]) -> float | None:

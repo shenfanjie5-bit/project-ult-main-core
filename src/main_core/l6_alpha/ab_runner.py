@@ -194,9 +194,10 @@ def format_ab_report_markdown(report: AbEvaluationReport) -> str:
             (
                 "| case_id | entity_id | baseline_analyzer_type | "
                 "challenger_analyzer_type | baseline_status | challenger_status | "
-                "score_delta | confidence_delta | status_matches |"
+                "score_delta | confidence_delta | status_matches | "
+                "baseline_error | challenger_error |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     lines.extend(_case_markdown_row(case) for case in report.cases)
@@ -269,6 +270,8 @@ def _case_markdown_row(case: AbCaseResult) -> str:
         _format_value(case.score_delta),
         _format_value(case.confidence_delta),
         case.status_matches,
+        case.baseline_error,
+        case.challenger_error,
     ]
     return "| " + " | ".join(_escape_markdown(value) for value in values) + " |"
 

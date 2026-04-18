@@ -154,6 +154,22 @@ def test_run_ab_evaluation_records_analyzer_failures() -> None:
     assert report.cases[0].baseline_diagnostics["error"]["type"] == "RuntimeError"
 
 
+def test_ab_report_markdown_includes_analyzer_failure_causes() -> None:
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+        baseline=FailingAnalyzer(),
+        challenger=RecordingAnalyzer(
+            "multi_agent_v1",
+            {"ENT_A": _alpha_result("ENT_A", "multi_agent_v1", 0.6, 0.8, "ok")},
+        ),
+    )
+
+    markdown = format_ab_report_markdown(report)
+
+    assert "baseline_error | challenger_error" in markdown
+    assert "RuntimeError: provider exploded" in markdown
+
+
 def test_ab_report_json_serializes_multi_agent_role_diagnostics() -> None:
     context = _context("ENT_A")
     report = run_ab_evaluation(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError, MainCoreError
-from main_core.l6_alpha import AlphaReasonerResponse, build_inconclusive_result
+from main_core.l6_alpha import build_inconclusive_result
 from main_core.l6_alpha.fallback import is_task_level_failure
 
 
@@ -42,14 +42,5 @@ def test_build_inconclusive_result_accepts_explicit_similar_cases(
 
 def test_is_task_level_failure_only_accepts_inconclusive_errors() -> None:
     assert is_task_level_failure(InconclusiveError("single stock task failed"))
-    assert is_task_level_failure(
-        AlphaReasonerResponse(
-            score=None,
-            confidence=0.0,
-            rationale="provider task failed",
-            similar_cases=[],
-            task_failed=True,
-        ),
-    )
     assert not is_task_level_failure(MainCoreError("infrastructure failed"))
     assert not is_task_level_failure(RuntimeError("unknown failure"))

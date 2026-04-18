@@ -22,6 +22,7 @@ from main_core.l7_recommendation import (
     generate_recommendations,
     submit_override,
 )
+from main_core.l7_recommendation.rules import action_for_score, rating_for_action
 from main_core.l7_recommendation.service import (
     BUY_SCORE_THRESHOLD,
     REDUCE_SCORE_THRESHOLD,
@@ -128,6 +129,12 @@ def test_generate_recommendations_maps_scores_in_pool_order() -> None:
         "reduce",
     ]
     assert [recommendation.rating for recommendation in recommendations] == ["B", "A", "C"]
+
+
+def test_shared_action_rating_rules_cover_thresholds() -> None:
+    assert action_for_score(BUY_SCORE_THRESHOLD) == "buy"
+    assert action_for_score(REDUCE_SCORE_THRESHOLD) == "reduce"
+    assert rating_for_action("hold") == "B"
 
 
 def test_generate_recommendations_passes_inconclusive_through_explicitly() -> None:
@@ -316,6 +323,27 @@ def test_generate_recommendations_honors_explicit_falsey_override_store(
     assert recommendation.action_type == "hold"
     assert recommendation.triggered_by == "system"
     assert recommendation.override_applied is False
+
+
+def test_submit_override_falsey_store_feeds_recommendation_generation() -> None:
+    class FalseyOverrideStore(InMemoryOverrideStore):
+        def __len__(self) -> int:
+            return 0
+
+    store = FalseyOverrideStore()
+    submit_override(_override("ENT_A", "reduce"), store=store)
+    pool = _pool(("ENT_A",))
+
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.8)],
+        _world_state(),
+        override_store=store,
+    )
+
+    assert recommendation.action_type == "reduce"
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
 
 
 def test_generate_recommendations_force_inconclusive_passes_schema_validation() -> None:

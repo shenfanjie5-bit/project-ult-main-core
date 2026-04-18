@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import PublishBundle
@@ -41,12 +42,10 @@ def test_build_dashboard_snapshot_happy_path() -> None:
 
 
 def test_build_dashboard_snapshot_rejects_missing_ref() -> None:
-    bundle = _mutated_bundle(
-        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].pop("ref")
-    )
-
-    with pytest.raises(ManifestPublishError, match="ref"):
-        build_dashboard_snapshot("cycle_l8", bundle)
+    with pytest.raises(ValidationError, match="ref"):
+        _mutated_bundle(
+            lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].pop("ref")
+        )
 
 
 def test_build_dashboard_snapshot_rejects_cycle_mismatch() -> None:
@@ -57,6 +56,29 @@ def test_build_dashboard_snapshot_rejects_cycle_mismatch() -> None:
     )
 
     with pytest.raises(ManifestPublishError, match="cycle_id"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
+@pytest.mark.parametrize(
+    "object_key",
+    [
+        WORLD_STATE_SNAPSHOT_KEY,
+        "official_alpha_pool",
+        "alpha_result_snapshot",
+        "recommendation_snapshot",
+    ],
+)
+def test_build_dashboard_snapshot_rejects_stale_formal_object_refs(
+    object_key: str,
+) -> None:
+    def mutate(payload: dict[str, Any]) -> None:
+        stale_ref = f"{object_key}/cycle_other/ref"
+        payload["formal_objects"][object_key]["ref"] = stale_ref
+        payload["manifest_candidate"]["object_refs"][object_key] = stale_ref
+
+    bundle = _mutated_bundle(mutate)
+
+    with pytest.raises(ManifestPublishError, match="requested cycle_id"):
         build_dashboard_snapshot("cycle_l8", bundle)
 
 

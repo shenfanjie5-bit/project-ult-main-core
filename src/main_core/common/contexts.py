@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from main_core.common.schemas import (
     FeatureSignalBundle,
@@ -23,6 +23,18 @@ class AlphaAnalysisContext(BaseModel):
     feature_bundle: FeatureSignalBundle
     world_state: WorldStateSnapshot
     similar_cases: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_cycle_and_entity_consistency(self) -> AlphaAnalysisContext:
+        """Keep L6 analyzer context anchored to one cycle and entity."""
+
+        if self.feature_bundle.cycle_id != self.cycle_id:
+            raise ValueError("feature_bundle.cycle_id must match context.cycle_id")
+        if self.world_state.cycle_id != self.cycle_id:
+            raise ValueError("world_state.cycle_id must match context.cycle_id")
+        if self.feature_bundle.entity_id != self.entity_id:
+            raise ValueError("feature_bundle.entity_id must match context.entity_id")
+        return self
 
 
 class WorldStateInputs(BaseModel):

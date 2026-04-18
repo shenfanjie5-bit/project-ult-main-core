@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -84,6 +85,64 @@ def test_feature_signal_bundle_deep_freezes_nested_payload_containers() -> None:
         bundle.graph_features["node"]["centrality"] = 0.9
 
     assert bundle.to_json() == before_json
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("feature_values", {"momentum": float("nan")}),
+        ("signal_values", {"candidate": {"score": float("inf")}}),
+        ("graph_features", {"centrality": Decimal("NaN")}),
+    ],
+)
+def test_feature_signal_bundle_rejects_non_finite_payload_values(
+    field_name: str,
+    field_value: object,
+) -> None:
+    payload = _bundle_payload()
+    payload[field_name] = field_value
+
+    with pytest.raises(ValidationError, match="non-finite numeric value"):
+        FeatureSignalBundle(**payload)
+
+
+def test_alpha_result_rejects_non_finite_diagnostics() -> None:
+    with pytest.raises(ValidationError, match="non-finite numeric value"):
+        AlphaResultSnapshot(
+            cycle_id="cycle_001",
+            entity_id="ENT_001",
+            analyzer_type="multi_agent_v1",
+            score=0.72,
+            confidence=0.81,
+            rationale="quality and momentum are aligned",
+            similar_cases=[],
+            status="ok",
+            diagnostics={"role": {"confidence": float("nan")}},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("audit_payload", {"latency": float("inf")}),
+        ("retrospective_seed", {"score": Decimal("NaN")}),
+    ],
+)
+def test_publish_bundle_rejects_non_finite_any_payload_values(
+    field_name: str,
+    field_value: object,
+) -> None:
+    payload = {
+        "cycle_id": "cycle_001",
+        "formal_objects": {"world_state": {"ref": "world_state_snapshot/cycle_001"}},
+        "manifest_candidate": {"snapshot_id": "snap_001"},
+        "audit_payload": {"actor": "system"},
+        "retrospective_seed": {"window": "1d"},
+    }
+    payload[field_name] = field_value
+
+    with pytest.raises(ValidationError, match="non-finite numeric value"):
+        PublishBundle(**payload)
 
 
 @pytest.mark.parametrize(
@@ -215,3 +274,100 @@ def test_all_schema_models_inherit_frozen_forbid_strict_base() -> None:
         assert model.model_config["frozen"] is True
         assert model.model_config["extra"] == "forbid"
         assert model.model_config["strict"] is True
+
+
+def test_schema_contract_cycle_builds_publish_bundle_with_manifest_anchor() -> None:
+    cycle_id = "cycle_contract"
+    bundle = FeatureSignalBundle(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        feature_values={"momentum": 0.42},
+        signal_values={},
+        graph_features={},
+        feature_weight_multiplier={"momentum": 1.0},
+    )
+    world_state = WorldStateSnapshot(
+        cycle_id=cycle_id,
+        baseline_regime="neutral",
+        llm_delta=0,
+        final_regime="neutral",
+        llm_rationale="baseline unchanged",
+        actual_model_used="reasoner-stub",
+        actual_provider="local",
+        fallback_path=[],
+    )
+    pool = OfficialAlphaPool(
+        cycle_id=cycle_id,
+        observation_pool_size=1,
+        official_alpha_pool_capacity=1,
+        selected_entities=["ENT_001"],
+        added_entities=["ENT_001"],
+        removed_entities=[],
+        freeze_reason_map={},
+    )
+    alpha = AlphaResultSnapshot(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        analyzer_type="single_prompt_v1",
+        score=0.72,
+        confidence=0.81,
+        rationale="quality and momentum are aligned",
+        similar_cases=[],
+        status="ok",
+    )
+    recommendation = RecommendationSnapshot(
+        cycle_id=cycle_id,
+        entity_id="ENT_001",
+        action_type="buy",
+        rating="A",
+        confidence=0.77,
+        triggered_by="system",
+        override_applied=False,
+        constraints_applied={},
+    )
+    formal_objects = {
+        "feature_signal_bundle": {
+            "ref": f"feature_signal_bundle/{cycle_id}/ref",
+            "payload": bundle.model_dump(mode="json"),
+            "count": 1,
+        },
+        "world_state_snapshot": {
+            "ref": f"world_state_snapshot/{cycle_id}/ref",
+            "payload": world_state.model_dump(mode="json"),
+            "count": 1,
+        },
+        "official_alpha_pool": {
+            "ref": f"official_alpha_pool/{cycle_id}/ref",
+            "payload": pool.model_dump(mode="json"),
+            "count": 1,
+        },
+        "alpha_result_snapshot": {
+            "ref": f"alpha_result_snapshot/{cycle_id}/ref",
+            "payload": [alpha.model_dump(mode="json")],
+            "count": 1,
+        },
+        "recommendation_snapshot": {
+            "ref": f"recommendation_snapshot/{cycle_id}/ref",
+            "payload": [recommendation.model_dump(mode="json")],
+            "count": 1,
+        },
+    }
+
+    publish_bundle = PublishBundle(
+        cycle_id=cycle_id,
+        formal_objects=formal_objects,
+        manifest_candidate={
+            "cycle_id": cycle_id,
+            "manifest_ref": "pg://cycle_publish_manifest/contract-1",
+            "object_refs": {
+                object_key: entry["ref"]
+                for object_key, entry in formal_objects.items()
+            },
+        },
+        audit_payload={"cycle_id": cycle_id},
+        retrospective_seed={"cycle_id": cycle_id},
+    )
+
+    assert publish_bundle.manifest_candidate["manifest_ref"] == (
+        "pg://cycle_publish_manifest/contract-1"
+    )

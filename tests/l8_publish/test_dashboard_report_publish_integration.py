@@ -107,7 +107,11 @@ def test_formal_report_uses_reserved_manifest_ref_in_committed_payload() -> None
     assert payload["formal_objects"][FORMAL_REPORT_KEY]["payload"]["appendix_refs"][
         "manifest_ref"
     ] == manifest_ref
+    assert "audit_payload_ref" not in payload["formal_objects"][FORMAL_REPORT_KEY][
+        "payload"
+    ]["appendix_refs"]
     assert report_commit_payload["appendix_refs"]["manifest_ref"] == manifest_ref
+    assert "audit_payload_ref" not in report_commit_payload["appendix_refs"]
 
 
 def test_manifest_ref_mismatch_fails_before_visible_manifest_write() -> None:

@@ -15,6 +15,12 @@ from main_core.l6_alpha.ab_runner import (
     run_ab_evaluation,
     write_ab_report,
 )
+from main_core.l6_alpha.multi_agent_analyzer import (
+    AgentRoleConfig,
+    MultiAgentAnalyzer,
+    MultiAgentRoleResult,
+    StaticMultiAgentReasonerPort,
+)
 
 EXPECTED_CONFIDENCE_MAE = 0.25
 EXPECTED_OK_SCORE_MAE = 0.3
@@ -39,6 +45,17 @@ class RecordingAnalyzer:
     ) -> AlphaResultSnapshot:
         self.calls.append((entity_id, context))
         return self.results[entity_id]
+
+
+class FailingAnalyzer:
+    analyzer_type = "single_prompt_v1"
+
+    def analyze(
+        self,
+        entity_id: str,
+        context: AlphaAnalysisContext,
+    ) -> AlphaResultSnapshot:
+        raise RuntimeError("provider exploded")
 
 
 def test_run_ab_evaluation_computes_metrics_from_same_contexts(monkeypatch) -> None:
@@ -84,6 +101,8 @@ def test_run_ab_evaluation_computes_metrics_from_same_contexts(monkeypatch) -> N
     assert report.baseline_inconclusive_count == 1
     assert report.challenger_inconclusive_count == 0
     assert report.inconclusive_count_delta == -1
+    assert report.baseline_failure_count == 0
+    assert report.challenger_failure_count == 0
     assert report.cases[0].score_delta == pytest.approx(EXPECTED_OK_SCORE_MAE)
     assert report.cases[1].score_delta is None
 
@@ -108,6 +127,61 @@ def test_ab_report_json_is_parseable_and_excludes_context_models() -> None:
     assert payload["cases"][0]["case_id"] == "case-a"
     assert "context" not in payload["cases"][0]
     assert "feature_bundle" not in json.dumps(payload)
+
+
+def test_run_ab_evaluation_requires_cases() -> None:
+    with pytest.raises(ValueError, match="at least one case"):
+        run_ab_evaluation(
+            [],
+            baseline=RecordingAnalyzer("single_prompt_v1", {}),
+            challenger=RecordingAnalyzer("multi_agent_v1", {}),
+        )
+
+
+def test_run_ab_evaluation_records_analyzer_failures() -> None:
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],
+        baseline=FailingAnalyzer(),
+        challenger=RecordingAnalyzer(
+            "multi_agent_v1",
+            {"ENT_A": _alpha_result("ENT_A", "multi_agent_v1", 0.6, 0.8, "ok")},
+        ),
+    )
+
+    assert report.baseline_failure_count == 1
+    assert report.cases[0].baseline_status == "inconclusive"
+    assert report.cases[0].baseline_error == "RuntimeError: provider exploded"
+    assert report.cases[0].baseline_diagnostics["error"]["type"] == "RuntimeError"
+
+
+def test_ab_report_json_serializes_multi_agent_role_diagnostics() -> None:
+    context = _context("ENT_A")
+    report = run_ab_evaluation(
+        [AbEvaluationCase("case-a", "ENT_A", context)],
+        baseline=RecordingAnalyzer(
+            "single_prompt_v1",
+            {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+        ),
+        challenger=MultiAgentAnalyzer(
+            StaticMultiAgentReasonerPort(
+                {
+                    "fundamental": MultiAgentRoleResult(
+                        "fundamental",
+                        0.8,
+                        0.9,
+                        "fundamental evidence",
+                        evidence={"drivers": ("quality", "growth")},
+                    ),
+                }
+            ),
+            roles=(AgentRoleConfig("fundamental"),),
+        ),
+    )
+
+    payload = json.loads(format_ab_report_json(report))
+
+    diagnostics = payload["cases"][0]["challenger_diagnostics"]
+    assert diagnostics["roles"][0]["evidence"] == {"drivers": ["quality", "growth"]}
 
 
 def test_ab_report_markdown_uses_stable_summary_and_case_tables() -> None:

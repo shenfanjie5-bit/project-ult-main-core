@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
+from decimal import Decimal
+from math import isfinite
 from types import MappingProxyType
 from typing import Any, Self
 
@@ -60,6 +62,20 @@ def _thaw_value(value: Any) -> Any:
     return value
 
 
+def _reject_non_finite_numbers(value: Any, path: str = "payload") -> None:
+    if isinstance(value, float) and not isfinite(value):
+        raise ValueError(f"{path} contains non-finite numeric value")
+    if isinstance(value, Decimal) and not value.is_finite():
+        raise ValueError(f"{path} contains non-finite numeric value")
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _reject_non_finite_numbers(item, f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for index, item in enumerate(value):
+            _reject_non_finite_numbers(item, f"{path}[{index}]")
+
+
 class FormalObjectBase(BaseModel):
     """Frozen schema base for formal and runtime contract objects."""
 
@@ -70,7 +86,9 @@ class FormalObjectBase(BaseModel):
         """Recursively freeze validated container fields before sharing objects."""
 
         for field_name in type(self).model_fields:
-            object.__setattr__(self, field_name, _freeze_value(getattr(self, field_name)))
+            field_value = getattr(self, field_name)
+            _reject_non_finite_numbers(field_value, field_name)
+            object.__setattr__(self, field_name, _freeze_value(field_value))
         return self
 
     @model_serializer(mode="plain")

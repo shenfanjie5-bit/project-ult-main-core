@@ -53,6 +53,62 @@ def test_publish_bundle_rejects_wrong_formal_objects_type() -> None:
         PublishBundle(**payload)
 
 
+def test_publish_bundle_rejects_manifest_ref_without_object_refs() -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "manifest_ref": "pg://cycle_publish_manifest/42",
+    }
+
+    with pytest.raises(ValidationError, match="object_refs"):
+        PublishBundle(**payload)
+
+
+@pytest.mark.parametrize(
+    "manifest_candidate",
+    [
+        {
+            "cycle_id": "cycle_001",
+            "manifest_ref": "manifest/cycle_001",
+            "object_refs": {},
+        },
+        {
+            "cycle_id": "cycle_001",
+            "manifest_ref": "manifest/cycle_001",
+            "object_refs": {"world_state": " "},
+        },
+        {
+            "cycle_id": "cycle_001",
+            "manifest_ref": "manifest/cycle_001",
+            "object_refs": {
+                "world_state": "world_state_snapshot/cycle_001",
+                "extra": "extra/cycle_001",
+            },
+        },
+    ],
+)
+def test_publish_bundle_rejects_invalid_manifest_object_refs(
+    manifest_candidate: dict[str, object],
+) -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = manifest_candidate
+
+    with pytest.raises(ValidationError):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_formal_object_ref_mismatch() -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "manifest_ref": "manifest/cycle_001",
+        "object_refs": {"world_state": "world_state_snapshot/cycle_001/other"},
+    }
+
+    with pytest.raises(ValidationError, match="must match manifest"):
+        PublishBundle(**payload)
+
+
 def test_override_record_happy_path_round_trips_json() -> None:
     override = OverrideRecord(**_override_payload())
 

@@ -10,10 +10,11 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError, MainCoreError
+from main_core.common.json_like import to_plain_json_like
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
-from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
+from main_core.l6_alpha.errors import AlphaAnalyzerError
 
 DEFAULT_MULTI_AGENT_ROLES: tuple[str, ...] = ("fundamental", "technical", "risk")
 
@@ -86,7 +87,7 @@ class StaticMultiAgentReasonerPort:
         role: AgentRoleConfig,
         payload: Mapping[str, Any],
     ) -> MultiAgentRoleResult:
-        """Return a configured role result or a stable zero-score default."""
+        """Return a configured role result or an explicit inconclusive role failure."""
 
         self.calls.append((entity_id, context, role, payload))
         if role.name in self.role_results:
@@ -94,10 +95,12 @@ class StaticMultiAgentReasonerPort:
 
         return MultiAgentRoleResult(
             role=role.name,
-            score=0.0,
+            score=None,
             confidence=0.0,
-            rationale=f"static {role.name} alpha analysis",
+            rationale=f"static {role.name} alpha analysis is not configured",
             evidence={"role": role.name},
+            task_failed=True,
+            failure_reason="static multi-agent role result is not configured",
         )
 
 
@@ -110,14 +113,14 @@ def build_multi_agent_input_payload(
     return {
         "cycle_id": context.cycle_id,
         "entity_id": entity_id,
-        "feature_values": _plain_value(context.feature_bundle.feature_values),
-        "signal_values": _plain_value(context.feature_bundle.signal_values),
-        "graph_features": _plain_value(context.feature_bundle.graph_features),
+        "feature_values": to_plain_json_like(context.feature_bundle.feature_values),
+        "signal_values": to_plain_json_like(context.feature_bundle.signal_values),
+        "graph_features": to_plain_json_like(context.feature_bundle.graph_features),
         "world_state": {
             "final_regime": context.world_state.final_regime,
             "llm_delta": context.world_state.llm_delta,
         },
-        "similar_cases": _plain_value(context.similar_cases),
+        "similar_cases": to_plain_json_like(context.similar_cases),
     }
 
 
@@ -149,6 +152,7 @@ def aggregate_role_results(
                 "confidence": 0.0,
                 "rationale": _all_failed_rationale(failed_results, roles),
                 "status": "inconclusive",
+                "diagnostics": _role_diagnostics(result_map.values()),
             },
         )
 
@@ -170,6 +174,7 @@ def aggregate_role_results(
             "confidence": weighted_confidence,
             "rationale": _aggregate_rationale(healthy_results, failed_results),
             "status": "ok",
+            "diagnostics": _role_diagnostics(result_map.values()),
         },
     )
 
@@ -224,6 +229,10 @@ class MultiAgentAnalyzer(AnalyzerBase):
                 )
             except MainCoreError:
                 raise
+            if result.role != role.name:
+                raise AlphaAnalyzerError(
+                    f"role result identity mismatch: expected {role.name}, got {result.role}"
+                )
             role_results.append(result)
 
         return aggregate_role_results(
@@ -248,6 +257,7 @@ def _multi_agent_result(
         rationale=fields["rationale"],
         similar_cases=[dict(case) for case in context.similar_cases],
         status=fields["status"],
+        diagnostics=fields.get("diagnostics", {}),
     )
 
 
@@ -274,6 +284,10 @@ def _role_result_map(
         if result.role in result_map:
             raise AlphaAnalyzerError(f"duplicate role result: {result.role}")
         result_map[result.role] = result
+    missing_roles = set(role_weight_map) - set(result_map)
+    if missing_roles:
+        missing = ", ".join(sorted(missing_roles))
+        raise AlphaAnalyzerError(f"missing role results: {missing}")
     return result_map
 
 
@@ -310,14 +324,28 @@ def _all_failed_rationale(
     return f"inconclusive: all multi-agent roles failed: {failures}"
 
 
-def _plain_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {key: _plain_value(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_plain_value(item) for item in value]
-    if isinstance(value, frozenset | set):
-        return sorted(_plain_value(item) for item in value)
-    return value
+def _role_diagnostics(
+    role_results: Sequence[MultiAgentRoleResult],
+) -> dict[str, Any]:
+    sorted_results = sorted(role_results, key=lambda result: result.role)
+    return {
+        "roles": [
+            {
+                "role": result.role,
+                "score": result.score,
+                "confidence": result.confidence,
+                "task_failed": result.task_failed,
+                "failure_reason": result.failure_reason,
+                "evidence": to_plain_json_like(result.evidence),
+            }
+            for result in sorted_results
+        ],
+        "failed_roles": [
+            result.role
+            for result in sorted_results
+            if result.task_failed
+        ],
+    }
 
 
 __all__ = [

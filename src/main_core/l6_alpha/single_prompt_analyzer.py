@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from math import isfinite
 from typing import ClassVar
 
 from main_core.common.contexts import AlphaAnalysisContext
@@ -9,18 +11,16 @@ from main_core.common.errors import MainCoreError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot, single_prompt_result
 from main_core.common.types import EntityId
+from main_core.l6_alpha.errors import AlphaAnalyzerError, AlphaReasonerError
 from main_core.l6_alpha.fallback import (
     build_inconclusive_result,
     is_task_level_failure,
 )
 from main_core.l6_alpha.reasoner_port import (
     AlphaReasonerPort,
+    AlphaReasonerResponse,
     StaticAlphaReasonerPort,
 )
-
-
-class AlphaAnalyzerError(MainCoreError):
-    """Raised when the L6 analyzer contract is violated before provider work."""
 
 
 class SinglePromptAnalyzer(AnalyzerBase):
@@ -42,11 +42,15 @@ class SinglePromptAnalyzer(AnalyzerBase):
             raise AlphaAnalyzerError("entity_id must match context.entity_id")
 
         try:
-            response = self._reasoner_port.analyze_alpha(entity_id, context)
+            raw_response = self._reasoner_port.analyze_alpha(entity_id, context)
         except Exception as exc:
             if is_task_level_failure(exc):
                 return build_inconclusive_result(entity_id, context, str(exc))
-            raise
+            if isinstance(exc, MainCoreError):
+                raise
+            raise AlphaReasonerError("alpha reasoner provider failed") from exc
+
+        response = _coerce_reasoner_response(raw_response)
 
         if response.task_failed:
             reason = response.failure_reason or response.rationale or "alpha task failed"
@@ -57,6 +61,7 @@ class SinglePromptAnalyzer(AnalyzerBase):
                 similar_cases=response.similar_cases,
             )
 
+        _validate_successful_response(response)
         return single_prompt_result(
             cycle_id=context.cycle_id,
             entity_id=entity_id,
@@ -68,4 +73,30 @@ class SinglePromptAnalyzer(AnalyzerBase):
         )
 
 
-__all__ = ["AlphaAnalyzerError", "SinglePromptAnalyzer"]
+def _coerce_reasoner_response(raw_response: object) -> AlphaReasonerResponse:
+    if isinstance(raw_response, AlphaReasonerResponse):
+        return raw_response
+    raise AlphaReasonerError("alpha reasoner must return AlphaReasonerResponse")
+
+
+def _validate_successful_response(response: AlphaReasonerResponse) -> None:
+    if response.score is None or not isfinite(response.score):
+        raise AlphaReasonerError("successful alpha response score must be finite")
+    if not isfinite(response.confidence) or not 0.0 <= response.confidence <= 1.0:
+        raise AlphaReasonerError(
+            "successful alpha response confidence must be finite within 0.0..1.0"
+        )
+    if not isinstance(response.rationale, str) or not response.rationale.strip():
+        raise AlphaReasonerError("successful alpha response rationale must be non-empty")
+    if not isinstance(response.similar_cases, Sequence) or isinstance(
+        response.similar_cases,
+        (str, bytes),
+    ):
+        raise AlphaReasonerError("successful alpha response similar_cases must be a list")
+    if any(not isinstance(case, Mapping) for case in response.similar_cases):
+        raise AlphaReasonerError(
+            "successful alpha response similar_cases items must be mappings"
+        )
+
+
+__all__ = ["AlphaAnalyzerError", "AlphaReasonerError", "SinglePromptAnalyzer"]

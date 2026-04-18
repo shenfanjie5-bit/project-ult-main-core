@@ -23,6 +23,7 @@ from .conftest import FakeDataPlatformPort
 
 SCOPED_MULTIPLIER = 1.5
 UNSCOPED_MULTIPLIER = 0.75
+OTHER_ENTITY_DUPLICATE_IGNORED_VALUE = 3.0
 
 
 @dataclass
@@ -212,6 +213,41 @@ def test_normalize_candidate_signals_omits_other_entities() -> None:
         entity_id=EntityId("ENT_A"),
         multipliers={},
     ) == {}
+
+
+def test_normalize_candidate_signals_ignores_duplicate_records_for_other_entities() -> None:
+    cycle_id = CycleId("cycle-layer-b")
+
+    normalized = normalize_candidate_signals(
+        (
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=EntityId("ENT_B"),
+                signal_name="layer_b_score",
+                value=1.0,
+            ),
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=EntityId("ENT_B"),
+                signal_name="layer_b_score",
+                value=2.0,
+            ),
+            CandidateSignalRecord(
+                cycle_id=cycle_id,
+                entity_id=EntityId("ENT_A"),
+                signal_name="layer_b_score",
+                value=3.0,
+            ),
+        ),
+        cycle_id=cycle_id,
+        entity_id=EntityId("ENT_A"),
+        multipliers={},
+    )
+
+    assert (
+        normalized["layer_b_score"]["adjusted_value"]
+        == OTHER_ENTITY_DUPLICATE_IGNORED_VALUE
+    )
 
 
 def test_merge_candidate_signals_preserves_bundle_payload_without_mutating() -> None:

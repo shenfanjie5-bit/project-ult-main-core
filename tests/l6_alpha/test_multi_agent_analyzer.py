@@ -110,6 +110,9 @@ def test_multi_agent_analyzer_happy_path_returns_formal_result(
     assert result.confidence == pytest.approx(EXPECTED_WEIGHTED_CONFIDENCE)
     assert "fundamental case is strong" in result.rationale
     assert "technical case is mixed" in result.rationale
+    assert result.diagnostics["roles"][0]["role"] == "fundamental"
+    assert result.diagnostics["roles"][0]["evidence"] == {"metric": "quality"}
+    assert result.diagnostics["failed_roles"] == ()
     assert [call[2].name for call in port.calls] == ["fundamental", "technical"]
 
 
@@ -180,6 +183,7 @@ def test_single_role_task_failure_keeps_ok_result_and_records_reason(
     assert result.status == "ok"
     assert result.score == HEALTHY_ONLY_SCORE
     assert "risk failed: risk provider timeout" in result.rationale
+    assert result.diagnostics["failed_roles"] == ("risk",)
 
 
 def test_inconclusive_role_error_is_downgraded_to_role_failure(
@@ -233,6 +237,40 @@ def test_all_role_task_failures_return_multi_agent_inconclusive(
     assert result.confidence == 0.0
     assert "fundamental: no data" in result.rationale
     assert "risk: timeout" in result.rationale
+    assert result.diagnostics["failed_roles"] == ("fundamental", "risk")
+
+
+def test_aggregate_role_results_rejects_missing_configured_role(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    with pytest.raises(AlphaAnalyzerError, match="missing role results"):
+        aggregate_role_results(
+            "ENT_A",
+            analysis_context,
+            (MultiAgentRoleResult("fundamental", 0.7, 0.8, "fundamental"),),
+            roles=(AgentRoleConfig("fundamental"), AgentRoleConfig("technical")),
+        )
+
+
+def test_multi_agent_analyzer_rejects_permuted_role_identity(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    analyzer = MultiAgentAnalyzer(
+        RecordingMultiAgentPort(
+            {
+                "fundamental": MultiAgentRoleResult(
+                    "technical",
+                    0.7,
+                    0.8,
+                    "wrong role",
+                ),
+            }
+        ),
+        roles=(AgentRoleConfig("fundamental"),),
+    )
+
+    with pytest.raises(AlphaAnalyzerError, match="identity mismatch"):
+        analyzer.analyze("ENT_A", analysis_context)
 
 
 def test_main_core_error_from_role_hard_stops_without_fallback(

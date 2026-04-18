@@ -71,15 +71,15 @@ def normalize_candidate_signals(
                 "candidate signal records must match the requested cycle_id"
             )
 
+        if str(record.entity_id) != str(entity_id):
+            continue
+
         record_key = (str(record.entity_id), record.source, record.signal_name)
         if record_key in seen_record_keys:
             raise CandidateSignalError(
                 "candidate signal records contain duplicate entity/source/signal_name"
             )
         seen_record_keys.add(record_key)
-
-        if str(record.entity_id) != str(entity_id):
-            continue
 
         if record.signal_name in normalized:
             raise CandidateSignalError(

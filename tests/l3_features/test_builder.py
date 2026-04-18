@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date
+from decimal import Decimal
 from sys import float_info
 from types import ModuleType
 
@@ -78,6 +79,16 @@ def test_feature_math_derives_market_features_and_applies_known_multipliers(
         "volume": 1.0,
         "return_1d": 1.0,
     }
+
+
+def test_feature_math_uses_decimal_arithmetic_before_schema_boundary() -> None:
+    weighted_features, effective_multipliers = apply_feature_weight_multiplier(
+        {"close_price": Decimal("0.1")},
+        {"close_price": Decimal("0.2")},
+    )
+
+    assert weighted_features == {"close_price": 0.02}
+    assert effective_multipliers == {"close_price": 0.2}
 
 
 def test_feature_math_omits_missing_return_1d(cycle_id: CycleId) -> None:
@@ -307,6 +318,35 @@ def test_default_multiplier_store_update_is_visible_to_same_cycle_build() -> Non
 
     assert bundles[0].feature_values["close_price"] == UPDATED_CLOSE_PRICE
     assert bundles[0].feature_weight_multiplier["close_price"] == UPDATED_CLOSE_MULTIPLIER
+
+
+def test_build_feature_signal_bundle_rejects_invalid_custom_multiplier_store(
+    cycle_id: CycleId,
+    active_entity: EntityMasterRow,
+    market_bar: MarketBar,
+) -> None:
+    class InvalidCustomMultiplierStore:
+        def get_multipliers(self, requested_cycle_id: CycleId | str) -> dict[str, float]:
+            return {"close_price": 0.0}
+
+        def put_multipliers(
+            self,
+            requested_cycle_id: CycleId | str,
+            updates: dict[str, float],
+        ) -> None:
+            raise AssertionError("builder should only read multipliers")
+
+    port = FakeDataPlatformPort(
+        market_bars=(market_bar,),
+        entity_master=(active_entity,),
+    )
+
+    with pytest.raises(InvalidMultiplierError, match="finite and > 0"):
+        build_feature_signal_bundle(
+            cycle_id,
+            data_port=port,
+            multiplier_store=InvalidCustomMultiplierStore(),
+        )
 
 
 def test_build_feature_signal_bundle_resolves_default_port_and_returns_single_bundle(

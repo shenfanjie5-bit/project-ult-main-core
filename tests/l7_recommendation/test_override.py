@@ -68,12 +68,31 @@ def test_submit_override_accepts_existing_record() -> None:
     assert store.records == (stored_override,)
 
 
+def test_submit_override_honors_falsey_custom_store() -> None:
+    class FalseyOverrideStore(InMemoryOverrideStore):
+        def __len__(self) -> int:
+            return 0
+
+    store = FalseyOverrideStore()
+
+    override = submit_override(_override_payload(action_type="reduce"), store=store)
+
+    assert store.records == (override,)
+
+
 def test_find_override_returns_matching_cycle_entity_record() -> None:
     first = OverrideRecord(**_override_payload(entity_id="ENT_B", action_type="reduce"))
     second = OverrideRecord(**_override_payload())
 
     assert find_override([first, second], "cycle_l7", "ENT_A") == second
     assert find_override([first, second], "cycle_l7", "ENT_Z") is None
+
+
+def test_find_override_returns_latest_matching_record() -> None:
+    older = OverrideRecord(**_override_payload(action_type="buy"))
+    newer = OverrideRecord(**_override_payload(action_type="reduce"))
+
+    assert find_override([older, newer], "cycle_l7", "ENT_A") == newer
 
 
 def test_apply_override_sets_human_audit_fields_and_keeps_constraints() -> None:

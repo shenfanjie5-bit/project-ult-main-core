@@ -9,6 +9,7 @@ from pathlib import Path
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerInterface
+from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
 
 
@@ -42,6 +43,10 @@ class AbCaseResult:
     score_delta: float | None
     confidence_delta: float
     status_matches: bool
+    baseline_error: str | None
+    challenger_error: str | None
+    baseline_diagnostics: dict[str, object]
+    challenger_diagnostics: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,8 @@ class AbEvaluationReport:
     baseline_inconclusive_count: int
     challenger_inconclusive_count: int
     inconclusive_count_delta: int
+    baseline_failure_count: int
+    challenger_failure_count: int
     cases: tuple[AbCaseResult, ...]
 
 
@@ -68,16 +75,21 @@ def run_ab_evaluation(
 ) -> AbEvaluationReport:
     """Run baseline and challenger analyzers on the same supplied contexts."""
 
+    if not cases:
+        raise ValueError("A/B evaluation requires at least one case")
+
     case_results: list[AbCaseResult] = []
     score_abs_deltas: list[float] = []
     confidence_abs_deltas: list[float] = []
     status_match_count = 0
     baseline_inconclusive_count = 0
     challenger_inconclusive_count = 0
+    baseline_failure_count = 0
+    challenger_failure_count = 0
 
     for case in cases:
-        baseline_result = baseline.analyze(case.entity_id, case.context)
-        challenger_result = challenger.analyze(case.entity_id, case.context)
+        baseline_result, baseline_error = _safe_analyze(baseline, case)
+        challenger_result, challenger_error = _safe_analyze(challenger, case)
 
         status_matches = baseline_result.status == challenger_result.status
         if status_matches:
@@ -86,6 +98,10 @@ def run_ab_evaluation(
             baseline_inconclusive_count += 1
         if challenger_result.status == "inconclusive":
             challenger_inconclusive_count += 1
+        if baseline_error is not None:
+            baseline_failure_count += 1
+        if challenger_error is not None:
+            challenger_failure_count += 1
 
         score_delta: float | None = None
         if baseline_result.score is not None and challenger_result.score is not None:
@@ -111,6 +127,10 @@ def run_ab_evaluation(
                 score_delta=score_delta,
                 confidence_delta=confidence_delta,
                 status_matches=status_matches,
+                baseline_error=baseline_error,
+                challenger_error=challenger_error,
+                baseline_diagnostics=_result_diagnostics(baseline_result),
+                challenger_diagnostics=_result_diagnostics(challenger_result),
             )
         )
 
@@ -129,6 +149,8 @@ def run_ab_evaluation(
         inconclusive_count_delta=(
             challenger_inconclusive_count - baseline_inconclusive_count
         ),
+        baseline_failure_count=baseline_failure_count,
+        challenger_failure_count=challenger_failure_count,
         cases=tuple(case_results),
     )
 
@@ -152,6 +174,8 @@ def format_ab_report_markdown(report: AbEvaluationReport) -> str:
         ("baseline_inconclusive_count", report.baseline_inconclusive_count),
         ("challenger_inconclusive_count", report.challenger_inconclusive_count),
         ("inconclusive_count_delta", report.inconclusive_count_delta),
+        ("baseline_failure_count", report.baseline_failure_count),
+        ("challenger_failure_count", report.challenger_failure_count),
     ]
     lines = [
         "# L6 A/B Evaluation",
@@ -206,6 +230,8 @@ def _report_payload(report: AbEvaluationReport) -> dict[str, object]:
         "baseline_inconclusive_count": report.baseline_inconclusive_count,
         "challenger_inconclusive_count": report.challenger_inconclusive_count,
         "inconclusive_count_delta": report.inconclusive_count_delta,
+        "baseline_failure_count": report.baseline_failure_count,
+        "challenger_failure_count": report.challenger_failure_count,
         "cases": [_case_payload(case) for case in report.cases],
     }
 
@@ -225,6 +251,10 @@ def _case_payload(case: AbCaseResult) -> dict[str, object]:
         "score_delta": case.score_delta,
         "confidence_delta": case.confidence_delta,
         "status_matches": case.status_matches,
+        "baseline_error": case.baseline_error,
+        "challenger_error": case.challenger_error,
+        "baseline_diagnostics": case.baseline_diagnostics,
+        "challenger_diagnostics": case.challenger_diagnostics,
     }
 
 
@@ -247,6 +277,40 @@ def _mean(values: Sequence[float]) -> float | None:
     if not values:
         return None
     return sum(values) / len(values)
+
+
+def _safe_analyze(
+    analyzer: AnalyzerInterface,
+    case: AbEvaluationCase,
+) -> tuple[AlphaResultSnapshot, str | None]:
+    try:
+        return analyzer.analyze(case.entity_id, case.context), None
+    except Exception as exc:  # noqa: BLE001 - A/B reports record analyzer failures.
+        error = f"{type(exc).__name__}: {exc}"
+        return (
+            AlphaResultSnapshot(
+                cycle_id=case.context.cycle_id,
+                entity_id=case.entity_id,
+                analyzer_type=analyzer.analyzer_type,
+                score=None,
+                confidence=0.0,
+                rationale=f"inconclusive: analyzer failure: {error}",
+                similar_cases=[],
+                status="inconclusive",
+                diagnostics={
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                },
+            ),
+            error,
+        )
+
+
+def _result_diagnostics(result: AlphaResultSnapshot) -> dict[str, object]:
+    diagnostics = result.model_dump(mode="json").get("diagnostics", {})
+    return diagnostics if isinstance(diagnostics, dict) else {}
 
 
 def _format_value(value: object) -> str:

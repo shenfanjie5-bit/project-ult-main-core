@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.errors import InconclusiveError, MainCoreError
 from main_core.common.schemas import AlphaResultSnapshot
-from main_core.l6_alpha import AlphaReasonerResponse, SinglePromptAnalyzer
+from main_core.l6_alpha import AlphaReasonerError, AlphaReasonerResponse, SinglePromptAnalyzer
 from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
 
 EXPECTED_FEATURE_MOMENTUM = 4.2
@@ -39,6 +40,18 @@ class RecordingReasonerPort:
         self.calls.append((entity_id, context))
         if self.error is not None:
             raise self.error
+        return self.response
+
+
+class MalformedReasonerPort:
+    def __init__(self, response: object) -> None:
+        self.response = response
+
+    def analyze_alpha(
+        self,
+        entity_id: object,
+        context: AlphaAnalysisContext,
+    ) -> object:
         return self.response
 
 
@@ -76,6 +89,39 @@ def test_single_prompt_analyzer_rejects_entity_mismatch_without_calling_reasoner
         analyzer.analyze("ENT_OTHER", analysis_context)
 
     assert port.calls == []
+
+
+@pytest.mark.parametrize(
+    "context_update",
+    [
+        {"cycle_id": "cycle_other"},
+        {
+            "feature_bundle": lambda context: context.feature_bundle.model_copy(
+                update={"cycle_id": "cycle_other"}
+            )
+        },
+        {
+            "world_state": lambda context: context.world_state.model_copy(
+                update={"cycle_id": "cycle_other"}
+            )
+        },
+        {
+            "feature_bundle": lambda context: context.feature_bundle.model_copy(
+                update={"entity_id": "ENT_OTHER"}
+            )
+        },
+    ],
+)
+def test_alpha_analysis_context_rejects_upstream_consistency_mismatch(
+    analysis_context: AlphaAnalysisContext,
+    context_update: dict[str, object],
+) -> None:
+    payload = analysis_context.model_dump(mode="python")
+    for key, value in context_update.items():
+        payload[key] = value(analysis_context) if callable(value) else value
+
+    with pytest.raises(ValidationError, match="must match context"):
+        AlphaAnalysisContext(**payload)
 
 
 def test_single_prompt_analyzer_converts_task_failed_response_to_inconclusive(
@@ -126,6 +172,56 @@ def test_single_prompt_analyzer_propagates_main_core_infrastructure_errors(
     )
 
     with pytest.raises(MainCoreError, match="reasoner unavailable"):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"score": 0.5, "confidence": 0.6, "rationale": "dict payload"},
+        object(),
+    ],
+)
+def test_single_prompt_analyzer_rejects_malformed_reasoner_return_values(
+    analysis_context: AlphaAnalysisContext,
+    response: object,
+) -> None:
+    analyzer = SinglePromptAnalyzer(MalformedReasonerPort(response))
+
+    with pytest.raises(AlphaReasonerError, match="AlphaReasonerResponse"):
+        analyzer.analyze("ENT_A", analysis_context)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        AlphaReasonerResponse(
+            score=None,
+            confidence=0.6,
+            rationale="missing score",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=0.5,
+            confidence=1.5,
+            rationale="bad confidence",
+            similar_cases=[],
+        ),
+        AlphaReasonerResponse(
+            score=0.5,
+            confidence=0.6,
+            rationale=" ",
+            similar_cases=[],
+        ),
+    ],
+)
+def test_single_prompt_analyzer_rejects_malformed_successful_responses(
+    analysis_context: AlphaAnalysisContext,
+    response: AlphaReasonerResponse,
+) -> None:
+    analyzer = SinglePromptAnalyzer(RecordingReasonerPort(response))
+
+    with pytest.raises(AlphaReasonerError):
         analyzer.analyze("ENT_A", analysis_context)
 
 

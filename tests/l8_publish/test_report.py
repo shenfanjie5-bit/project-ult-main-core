@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import PublishBundle
@@ -36,17 +37,16 @@ def test_build_formal_report_happy_path() -> None:
         "alpha_result_ref": "alpha_result_snapshot/cycle_l8/ref",
         "recommendation_ref": "recommendation_snapshot/cycle_l8/ref",
         "manifest_ref": "manifest/cycle_l8",
-        "audit_payload_ref": "audit_payload/cycle_l8",
     }
 
 
 def test_build_formal_report_rejects_missing_ref() -> None:
-    bundle = _mutated_bundle(
-        lambda payload: payload["formal_objects"][RECOMMENDATION_SNAPSHOT_KEY].pop("ref")
-    )
-
-    with pytest.raises(ManifestPublishError, match="ref"):
-        build_formal_report("cycle_l8", bundle)
+    with pytest.raises(ValidationError, match="ref"):
+        _mutated_bundle(
+            lambda payload: payload["formal_objects"][RECOMMENDATION_SNAPSHOT_KEY].pop(
+                "ref"
+            )
+        )
 
 
 def test_build_formal_report_rejects_missing_manifest_ref() -> None:
@@ -59,12 +59,24 @@ def test_build_formal_report_rejects_missing_manifest_ref() -> None:
 
 
 def test_build_formal_report_rejects_cycle_mismatch() -> None:
+    with pytest.raises(ValidationError, match="cycle_id"):
+        _mutated_bundle(
+            lambda payload: payload.__setitem__("cycle_id", "cycle_other")
+        )
+
+
+def test_build_formal_report_accepts_opaque_manifest_ref() -> None:
     bundle = _mutated_bundle(
-        lambda payload: payload.__setitem__("cycle_id", "cycle_other")
+        lambda payload: payload["manifest_candidate"].__setitem__(
+            "manifest_ref",
+            "pg://cycle_publish_manifest/42",
+        )
     )
 
-    with pytest.raises(ManifestPublishError, match="cycle_id"):
-        build_formal_report("cycle_l8", bundle)
+    report = build_formal_report("cycle_l8", bundle)
+
+    assert report.appendix_refs["manifest_ref"] == "pg://cycle_publish_manifest/42"
+    assert "audit_payload_ref" not in report.appendix_refs
 
 
 def test_build_formal_report_keeps_inconclusive_outcomes_visible() -> None:

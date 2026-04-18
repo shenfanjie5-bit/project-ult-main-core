@@ -8,7 +8,11 @@ from threading import Barrier
 import pytest
 
 from main_core.common.types import CycleId
-from main_core.l3_features import InMemoryMultiplierStore, InvalidMultiplierError
+from main_core.l3_features import (
+    InMemoryMultiplierStore,
+    InvalidMultiplierError,
+    validate_multiplier_mapping,
+)
 
 
 def test_in_memory_multiplier_store_is_cycle_scoped() -> None:
@@ -78,3 +82,8 @@ def test_in_memory_multiplier_store_rejects_invalid_values(
         store.put_multipliers("cycle-001", {"close_price": invalid_multiplier})
 
     assert store.get_multipliers("cycle-001") == {}
+
+
+def test_shared_multiplier_validator_rejects_invalid_values() -> None:
+    with pytest.raises(InvalidMultiplierError, match="finite and > 0"):
+        validate_multiplier_mapping({"close_price": 0.0})

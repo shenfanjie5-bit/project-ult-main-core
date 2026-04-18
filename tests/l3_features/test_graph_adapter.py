@@ -20,6 +20,7 @@ from main_core.l3_features import (
     load_graph_features,
     merge_graph_features,
 )
+from main_core.l3_features.graph_adapter import GraphEnginePort as RuntimeGraphEnginePort
 
 from .conftest import FakeDataPlatformPort
 
@@ -70,6 +71,7 @@ def test_graph_engine_port_is_runtime_checkable_and_read_only() -> None:
         for name in dir(port)
         if name.startswith(("write_", "commit_", "mutate_"))
     }
+    assert RuntimeGraphEnginePort is GraphEnginePort
 
 
 def test_load_graph_features_returns_empty_without_port_or_matching_record() -> None:

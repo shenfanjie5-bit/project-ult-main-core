@@ -292,6 +292,62 @@ def test_submit_override_default_store_latest_matching_submission_wins(
     assert "regime_gate" not in recommendation.constraints_applied
 
 
+def test_generate_recommendations_uses_latest_submitted_override_when_input_is_unsorted() -> None:
+    pool = _pool(("ENT_A",))
+    newer = _override(
+        "ENT_A",
+        "reduce",
+        submitted_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC),
+    )
+    older = _override(
+        "ENT_A",
+        "buy",
+        submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    )
+
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.5)],
+        _world_state(),
+        overrides=[newer, older],
+    )
+
+    assert recommendation.action_type == "reduce"
+    assert recommendation.rating == "C"
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
+
+
+def test_generate_recommendations_uses_latest_submitted_override_from_store() -> None:
+    pool = _pool(("ENT_A",))
+    override_store = InMemoryOverrideStore(
+        [
+            _override(
+                "ENT_A",
+                "reduce",
+                submitted_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC),
+            ),
+            _override(
+                "ENT_A",
+                "buy",
+                submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+            ),
+        ],
+    )
+
+    [recommendation] = generate_recommendations(
+        pool,
+        [_analysis("ENT_A", 0.5)],
+        _world_state(),
+        override_store=override_store,
+    )
+
+    assert recommendation.action_type == "reduce"
+    assert recommendation.rating == "C"
+    assert recommendation.triggered_by == "human_decision"
+    assert recommendation.override_applied is True
+
+
 def test_generate_recommendations_honors_explicit_falsey_override_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

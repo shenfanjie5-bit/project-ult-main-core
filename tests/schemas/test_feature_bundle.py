@@ -196,8 +196,19 @@ def test_feature_signal_bundle_deep_freezes_nested_payload_containers() -> None:
         (
             PublishBundle(
                 cycle_id="cycle_001",
-                formal_objects={"world_state": {"ref": "world_state_snapshot/cycle_001"}},
-                manifest_candidate={"snapshot_id": "snap_001"},
+                formal_objects={
+                    "world_state_snapshot": {
+                        "ref": "world_state_snapshot/cycle_001/ref",
+                        "payload": {"cycle_id": "cycle_001"},
+                        "count": 1,
+                    },
+                },
+                manifest_candidate={
+                    "snapshot_id": "snap_001",
+                    "object_refs": {
+                        "world_state_snapshot": "world_state_snapshot/cycle_001/ref",
+                    },
+                },
                 audit_payload={"actor": "system"},
                 retrospective_seed={"window": "1d"},
             ),

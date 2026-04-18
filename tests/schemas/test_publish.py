@@ -14,8 +14,19 @@ from main_core.l8_publish.refs import WORLD_STATE_SNAPSHOT_KEY
 def _publish_payload() -> dict[str, object]:
     return {
         "cycle_id": "cycle_001",
-        "formal_objects": {"world_state": {"ref": "world_state_snapshot/cycle_001"}},
-        "manifest_candidate": {"snapshot_id": "snap_001"},
+        "formal_objects": {
+            WORLD_STATE_SNAPSHOT_KEY: {
+                "ref": "world_state_snapshot/cycle_001/ref",
+                "payload": {"cycle_id": "cycle_001"},
+                "count": 1,
+            },
+        },
+        "manifest_candidate": {
+            "snapshot_id": "snap_001",
+            "object_refs": {
+                WORLD_STATE_SNAPSHOT_KEY: "world_state_snapshot/cycle_001/ref",
+            },
+        },
         "audit_payload": {"actor": "system"},
         "retrospective_seed": {"window": "1d"},
     }
@@ -65,6 +76,54 @@ def test_publish_bundle_rejects_stale_formal_object_ref() -> None:
     }
 
     with pytest.raises(ValidationError, match="bundle.cycle_id"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_non_mapping_formal_object_entry() -> None:
+    payload = _publish_payload()
+    payload["formal_objects"] = {WORLD_STATE_SNAPSHOT_KEY: "not-an-entry"}
+
+    with pytest.raises(ValidationError, match="formal object entry"):
+        PublishBundle(**payload)
+
+
+@pytest.mark.parametrize("field_name", ["ref", "payload", "count"])
+def test_publish_bundle_rejects_formal_object_entry_missing_required_field(
+    field_name: str,
+) -> None:
+    payload = _publish_payload()
+    formal_objects = payload["formal_objects"]
+    assert isinstance(formal_objects, dict)
+    entry = dict(formal_objects[WORLD_STATE_SNAPSHOT_KEY])
+    entry.pop(field_name)
+    payload["formal_objects"] = {WORLD_STATE_SNAPSHOT_KEY: entry}
+
+    with pytest.raises(ValidationError, match=field_name):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_manifest_object_refs_missing_formal_object_key() -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "object_refs": {},
+    }
+
+    with pytest.raises(ValidationError, match="object_refs keys"):
+        PublishBundle(**payload)
+
+
+def test_publish_bundle_rejects_manifest_object_ref_for_absent_formal_object_key() -> None:
+    payload = _publish_payload()
+    payload["manifest_candidate"] = {
+        "cycle_id": "cycle_001",
+        "object_refs": {
+            WORLD_STATE_SNAPSHOT_KEY: "world_state_snapshot/cycle_001/ref",
+            "unbacked_object": "unbacked_object/cycle_001/ref",
+        },
+    }
+
+    with pytest.raises(ValidationError, match="object_refs keys"):
         PublishBundle(**payload)
 
 

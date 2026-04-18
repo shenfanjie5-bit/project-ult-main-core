@@ -10,6 +10,8 @@ from pydantic import model_validator
 from main_core.common.schemas.base import FormalObjectBase
 from main_core.common.types import CycleId
 
+_MISSING = object()
+
 
 class PublishBundle(FormalObjectBase):
     """Runtime Phase 3 publish bundle described in §9.3."""
@@ -46,17 +48,19 @@ def _formal_refs_by_key(
 ) -> dict[str, tuple[str, ...]]:
     formal_refs_by_key: dict[str, tuple[str, ...]] = {}
     for object_key, entry in formal_objects.items():
-        if not isinstance(entry, Mapping):
-            continue
-
         key = str(object_key)
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"{key} formal object entry must be a mapping")
+
         refs = _entry_refs(key, entry)
-        if refs:
-            formal_refs_by_key[key] = refs
+        formal_refs_by_key[key] = refs
         for ref in refs:
             _ensure_ref_has_cycle_segment(f"{key}.ref", ref, cycle_id)
 
-        _ensure_payload_cycles(key, entry.get("payload"), cycle_id)
+        payload = _entry_payload(entry, key)
+        count = _entry_count(entry, key)
+        _ensure_count_matches_payload(key, count, payload)
+        _ensure_payload_cycles(key, payload, cycle_id)
     return formal_refs_by_key
 
 
@@ -66,9 +70,17 @@ def _validate_manifest_object_refs(
     cycle_id: str,
 ) -> None:
     if object_refs is None:
-        return
+        raise ValueError("manifest_candidate.object_refs must be a mapping")
     if not isinstance(object_refs, Mapping):
         raise ValueError("manifest_candidate.object_refs must be a mapping")
+
+    formal_object_keys = set(formal_refs_by_key)
+    manifest_object_keys = {str(object_key) for object_key in object_refs}
+    if manifest_object_keys != formal_object_keys:
+        raise ValueError(
+            "manifest_candidate.object_refs keys must match formal_objects keys"
+        )
+
     for object_key, ref in object_refs.items():
         if not isinstance(ref, str) or not ref:
             raise ValueError("manifest object_ref values must be non-empty strings")
@@ -127,12 +139,38 @@ def _entry_refs(object_key: str, entry: Mapping[str, Any]) -> tuple[str, ...]:
             raise ValueError(f"{object_key}.refs must contain non-empty strings")
         return tuple(refs)
 
-    ref = entry.get("ref")
-    if ref is None:
-        return ()
+    ref = entry.get("ref", _MISSING)
+    if ref is _MISSING:
+        raise ValueError(f"{object_key}.ref or {object_key}.refs is required")
     if not isinstance(ref, str) or not ref:
         raise ValueError(f"{object_key}.ref must be a non-empty string")
     return (ref,)
+
+
+def _entry_payload(entry: Mapping[str, Any], object_key: str) -> Any:
+    payload = entry.get("payload", _MISSING)
+    if payload is _MISSING:
+        raise ValueError(f"{object_key}.payload is required")
+    if isinstance(payload, Mapping):
+        return payload
+    if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+        return payload
+    raise ValueError(f"{object_key}.payload must be a mapping or list")
+
+
+def _entry_count(entry: Mapping[str, Any], object_key: str) -> int:
+    count = entry.get("count", _MISSING)
+    if count is _MISSING:
+        raise ValueError(f"{object_key}.count is required")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise ValueError(f"{object_key}.count must be a non-negative integer")
+    return count
+
+
+def _ensure_count_matches_payload(object_key: str, count: int, payload: Any) -> None:
+    expected_count = len(payload) if isinstance(payload, Sequence) else 1
+    if count != expected_count:
+        raise ValueError(f"{object_key}.count must match payload")
 
 
 def _ensure_optional_payload_cycle(

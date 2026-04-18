@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from main_core.common.contexts import RecommendationConstraintInputs
@@ -102,10 +103,14 @@ def _resolve_overrides(
 def _latest_overrides_by_cycle_entity(
     overrides: Sequence[OverrideRecord],
 ) -> tuple[OverrideRecord, ...]:
-    latest_by_key: dict[tuple[str, str], OverrideRecord] = {}
-    for override in overrides:
-        latest_by_key[(str(override.cycle_id), str(override.entity_id))] = override
-    return tuple(latest_by_key.values())
+    latest_by_key: dict[tuple[str, str], tuple[datetime, int, OverrideRecord]] = {}
+    for index, override in enumerate(overrides):
+        key = (str(override.cycle_id), str(override.entity_id))
+        candidate = (override.submitted_at, index, override)
+        existing = latest_by_key.get(key)
+        if existing is None or candidate[:2] > existing[:2]:
+            latest_by_key[key] = candidate
+    return tuple(candidate[2] for candidate in latest_by_key.values())
 
 
 def _default_override_store() -> OverrideStore:

@@ -8,7 +8,10 @@ from typing import Any
 from main_core.common.errors import ManifestPublishError
 from main_core.common.schemas import FormalObjectBase
 from main_core.common.types import CycleId
-from main_core.l8_publish.bundle_utils import ordered_formal_object_keys
+from main_core.l8_publish.bundle_utils import (
+    ensure_formal_object_ref_matches_cycle,
+    ordered_formal_object_keys,
+)
 from main_core.l8_publish.publish_port import (
     CommittedFormalObject,
     DataPlatformPublishPort,
@@ -62,6 +65,7 @@ def write_manifest_after_commits(
     """Write the cycle manifest only after all formal object commits succeed."""
 
     committed_tuple = tuple(committed_objects)
+    _validate_committed_formal_object_refs(cycle_id, committed_tuple)
     try:
         manifest = publish_port.write_cycle_manifest(
             cycle_id=cycle_id,
@@ -211,6 +215,30 @@ def _validate_manifest_write_result(
             raise ManifestPublishError(
                 f"manifest table_snapshots snapshot_id mismatch for {object_key}",
             )
+
+
+def _validate_committed_formal_object_refs(
+    cycle_id: CycleId,
+    committed_objects: Sequence[CommittedFormalObject],
+) -> None:
+    for committed_object in committed_objects:
+        if not isinstance(committed_object, CommittedFormalObject):
+            raise ManifestPublishError(
+                "manifest committed objects must be CommittedFormalObject",
+            )
+        if not _non_empty_string(committed_object.object_key):
+            raise ManifestPublishError(
+                "manifest committed object_key must be non-empty",
+            )
+        if not _non_empty_string(committed_object.ref):
+            raise ManifestPublishError(
+                f"{committed_object.object_key}.ref must be non-empty",
+            )
+        ensure_formal_object_ref_matches_cycle(
+            committed_object.object_key,
+            committed_object.ref,
+            cycle_id,
+        )
 
 
 def _non_empty_string(value: object) -> bool:

@@ -196,6 +196,26 @@ def test_prepare_publish_bundle_raises_when_manifest_write_fails() -> None:
     assert publish_port.manifest_calls == []
 
 
+def test_prepare_publish_bundle_rejects_stale_committed_ref_before_manifest_write() -> None:
+    publish_port = StaleRecommendationRefPublishPort()
+
+    with pytest.raises(ManifestPublishError, match="recommendation_snapshot.ref"):
+        prepare_publish_bundle(
+            "cycle_l8",
+            source=FakeFormalObjectSource(),
+            publish_port=publish_port,
+            derived_builders=(),
+        )
+
+    assert [call[1] for call in publish_port.commit_calls] == [
+        WORLD_STATE_SNAPSHOT_KEY,
+        OFFICIAL_ALPHA_POOL_KEY,
+        ALPHA_RESULT_SNAPSHOT_KEY,
+        RECOMMENDATION_SNAPSHOT_KEY,
+    ]
+    assert publish_port.manifest_calls == []
+
+
 class InvalidCommitResultPublishPort(RecordingPublishPort):
     def __init__(self, *, override: Mapping[str, Any]) -> None:
         super().__init__()
@@ -219,6 +239,30 @@ class InvalidCommitResultPublishPort(RecordingPublishPort):
             snapshot_id=self.override.get("snapshot_id", committed.snapshot_id),
             payload_hash=self.override.get("payload_hash", committed.payload_hash),
             row_count=self.override.get("row_count", committed.row_count),
+        )
+
+
+class StaleRecommendationRefPublishPort(RecordingPublishPort):
+    def commit_formal_object(
+        self,
+        *,
+        cycle_id: CycleId,
+        object_key: str,
+        payload: Mapping[str, Any],
+    ) -> CommittedFormalObject:
+        committed = super().commit_formal_object(
+            cycle_id=cycle_id,
+            object_key=object_key,
+            payload=payload,
+        )
+        if object_key != RECOMMENDATION_SNAPSHOT_KEY:
+            return committed
+        return CommittedFormalObject(
+            object_key=committed.object_key,
+            ref=f"{RECOMMENDATION_SNAPSHOT_KEY}/cycle_old/ref",
+            snapshot_id=committed.snapshot_id,
+            payload_hash=committed.payload_hash,
+            row_count=committed.row_count,
         )
 
 

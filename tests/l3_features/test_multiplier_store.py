@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from threading import Barrier
 
 import pytest
@@ -87,3 +88,8 @@ def test_in_memory_multiplier_store_rejects_invalid_values(
 def test_shared_multiplier_validator_rejects_invalid_values() -> None:
     with pytest.raises(InvalidMultiplierError, match="finite and > 0"):
         validate_multiplier_mapping({"close_price": 0.0})
+
+
+def test_shared_multiplier_validator_rejects_decimal_float_overflow() -> None:
+    with pytest.raises(InvalidMultiplierError, match="finite and > 0"):
+        validate_multiplier_mapping({"close_price": Decimal("1e10000")})

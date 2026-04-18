@@ -12,27 +12,31 @@ from main_core.l3_features.errors import InvalidMultiplierError
 def validate_multiplier_mapping(updates: Mapping[str, object]) -> dict[str, float]:
     """Return a float copy after enforcing positive finite multipliers."""
 
-    invalid_keys = [
-        str(feature_name)
-        for feature_name, multiplier in updates.items()
-        if not _is_valid_multiplier(multiplier)
-    ]
+    validated_updates: dict[str, float] = {}
+    invalid_keys: list[str] = []
+    for feature_name, multiplier in updates.items():
+        converted_multiplier = _validated_multiplier(multiplier)
+        if converted_multiplier is None:
+            invalid_keys.append(str(feature_name))
+            continue
+        validated_updates[str(feature_name)] = converted_multiplier
     if invalid_keys:
         raise InvalidMultiplierError("feature weight multipliers must be finite and > 0")
-    return {
-        str(feature_name): float(multiplier)
-        for feature_name, multiplier in updates.items()
-    }
+    return validated_updates
 
 
-def _is_valid_multiplier(multiplier: object) -> bool:
+def _validated_multiplier(multiplier: object) -> float | None:
     if isinstance(multiplier, bool):
-        return False
-    if isinstance(multiplier, int | float):
-        return isfinite(multiplier) and multiplier > 0
-    if isinstance(multiplier, Decimal):
-        return multiplier.is_finite() and multiplier > 0
-    return False
+        return None
+    if isinstance(multiplier, int | float | Decimal):
+        try:
+            converted_multiplier = float(multiplier)
+        except (OverflowError, ValueError):
+            return None
+        if isfinite(converted_multiplier) and converted_multiplier > 0:
+            return converted_multiplier
+        return None
+    return None
 
 
 __all__ = ["validate_multiplier_mapping"]

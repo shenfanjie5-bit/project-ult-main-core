@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any, Protocol
 
 from main_core.common.errors import MainCoreError
 from main_core.common.schemas import OverrideRecord, RecommendationSnapshot
 from main_core.common.types import CycleId, EntityId
+from main_core.l7_recommendation.rules import override_recency_key, rating_for_action
 
 
 class OverrideStore(Protocol):
@@ -65,12 +67,17 @@ def find_override(
     cycle_id: CycleId,
     entity_id: EntityId,
 ) -> OverrideRecord | None:
-    """Return the first override matching a cycle/entity pair."""
+    """Return the latest override matching a cycle/entity pair."""
 
-    for override in overrides:
+    latest_override: OverrideRecord | None = None
+    latest_key: tuple[datetime, int] | None = None
+    for insertion_index, override in enumerate(overrides):
         if override.cycle_id == cycle_id and override.entity_id == entity_id:
-            return override
-    return None
+            candidate_key = override_recency_key(override, insertion_index)
+            if latest_key is None or candidate_key > latest_key:
+                latest_override = override
+                latest_key = candidate_key
+    return latest_override
 
 
 def apply_override(
@@ -94,7 +101,7 @@ def apply_override(
         updates["rating"] = None
         updates["confidence"] = None
     else:
-        updates["rating"] = _rating_for_action(override.action_type)
+        updates["rating"] = rating_for_action(override.action_type)
 
     return candidate.model_copy(update=updates)
 
@@ -103,15 +110,6 @@ def _coerce_override(override_input: OverrideRecord | Mapping[str, Any]) -> Over
     if isinstance(override_input, OverrideRecord):
         return override_input.model_copy()
     return OverrideRecord.model_validate(dict(override_input))
-
-
-def _rating_for_action(action_type: str) -> str:
-    ratings = {
-        "buy": "A",
-        "hold": "B",
-        "reduce": "C",
-    }
-    return ratings[action_type]
 
 
 __all__ = [

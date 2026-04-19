@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -76,6 +76,35 @@ def test_find_override_returns_matching_cycle_entity_record() -> None:
     assert find_override([first, second], "cycle_l7", "ENT_Z") is None
 
 
+def test_find_override_returns_latest_matching_submission_by_timestamp() -> None:
+    newer = OverrideRecord(
+        **_override_payload(
+            action_type="reduce",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC),
+        ),
+    )
+    older = OverrideRecord(
+        **_override_payload(
+            action_type="buy",
+            submitted_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        ),
+    )
+
+    assert find_override([newer, older], "cycle_l7", "ENT_A") == newer
+
+
+def test_find_override_breaks_timestamp_ties_by_insertion_order() -> None:
+    submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    first = OverrideRecord(
+        **_override_payload(action_type="buy", submitted_at=submitted_at),
+    )
+    second = OverrideRecord(
+        **_override_payload(action_type="reduce", submitted_at=submitted_at),
+    )
+
+    assert find_override([first, second], "cycle_l7", "ENT_A") == second
+
+
 def test_apply_override_sets_human_audit_fields_and_keeps_constraints() -> None:
     override = OverrideRecord(**_override_payload(action_type="reduce"))
 
@@ -97,6 +126,23 @@ def test_apply_override_rejects_non_matching_override() -> None:
 
 def test_override_record_rejects_naive_submitted_at() -> None:
     payload = _override_payload(submitted_at=datetime(2026, 1, 2, 3, 4, 5))
+
+    with pytest.raises(ValidationError, match="timezone-aware UTC"):
+        OverrideRecord(**payload)
+
+
+def test_override_record_rejects_non_utc_submitted_at() -> None:
+    payload = _override_payload(
+        submitted_at=datetime(
+            2026,
+            1,
+            2,
+            12,
+            4,
+            5,
+            tzinfo=timezone(timedelta(hours=9)),
+        ),
+    )
 
     with pytest.raises(ValidationError, match="timezone-aware UTC"):
         OverrideRecord(**payload)

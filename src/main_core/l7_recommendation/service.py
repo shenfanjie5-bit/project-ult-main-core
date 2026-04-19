@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from main_core.common.contexts import RecommendationConstraintInputs
 from main_core.common.errors import MainCoreError
 from main_core.common.protocols import RecommendationConstraintProvider
 from main_core.common.schemas import (
+    ActionType,
     AlphaResultSnapshot,
     OfficialAlphaPool,
     OverrideRecord,
@@ -23,6 +25,7 @@ from main_core.l7_recommendation.override import (
     apply_override,
     find_override,
 )
+from main_core.l7_recommendation.rules import override_recency_key, rating_for_action
 
 BUY_SCORE_THRESHOLD = 0.65
 REDUCE_SCORE_THRESHOLD = 0.35
@@ -101,10 +104,14 @@ def _resolve_overrides(
 def _latest_overrides_by_cycle_entity(
     overrides: Sequence[OverrideRecord],
 ) -> tuple[OverrideRecord, ...]:
-    latest_by_key: dict[tuple[str, str], OverrideRecord] = {}
-    for override in overrides:
-        latest_by_key[(str(override.cycle_id), str(override.entity_id))] = override
-    return tuple(latest_by_key.values())
+    latest_by_key: dict[tuple[str, str], tuple[tuple[datetime, int], OverrideRecord]] = {}
+    for insertion_index, override in enumerate(overrides):
+        cycle_entity_key = (str(override.cycle_id), str(override.entity_id))
+        candidate = (override_recency_key(override, insertion_index), override)
+        current = latest_by_key.get(cycle_entity_key)
+        if current is None or candidate[0] > current[0]:
+            latest_by_key[cycle_entity_key] = candidate
+    return tuple(override for _, override in latest_by_key.values())
 
 
 def _default_override_store() -> OverrideStore:
@@ -169,7 +176,7 @@ def _candidate_from_analysis(analysis: AlphaResultSnapshot) -> RecommendationSna
         cycle_id=analysis.cycle_id,
         entity_id=analysis.entity_id,
         action_type=action_type,
-        rating=_rating_for_action(action_type),
+        rating=rating_for_action(action_type),
         confidence=analysis.confidence,
         triggered_by="system",
         override_applied=False,
@@ -204,21 +211,12 @@ def _validate_gated_identity(
         raise MainCoreError("constraint gate must preserve recommendation entity_id")
 
 
-def _action_for_score(score: float) -> str:
+def _action_for_score(score: float) -> ActionType:
     if score >= BUY_SCORE_THRESHOLD:
         return "buy"
     if score <= REDUCE_SCORE_THRESHOLD:
         return "reduce"
     return "hold"
-
-
-def _rating_for_action(action_type: str) -> str:
-    ratings = {
-        "buy": "A",
-        "hold": "B",
-        "reduce": "C",
-    }
-    return ratings[action_type]
 
 
 __all__ = [

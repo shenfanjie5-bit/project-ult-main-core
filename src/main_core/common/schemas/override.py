@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from pydantic import field_validator
 
@@ -28,7 +28,9 @@ class OverrideRecord(FormalObjectBase):
 
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("submitted_at must be a timezone-aware UTC datetime")
-        return value
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("submitted_at must be a timezone-aware UTC datetime")
+        return value.astimezone(UTC)
 
 
 __all__ = ["OverrideRecord"]

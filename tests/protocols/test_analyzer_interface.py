@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from inspect import signature
 
+import pytest
+
 from main_core.common.contexts import AlphaAnalysisContext
+from main_core.common.errors import AlphaAnalyzerError
 from main_core.common.protocols import AnalyzerBase, AnalyzerInterface
 from main_core.common.schemas import FeatureSignalBundle, WorldStateSnapshot
 from main_core.l6_alpha import (
@@ -51,6 +55,42 @@ def _analysis_context() -> AlphaAnalysisContext:
         feature_bundle=_feature_bundle(),
         world_state=_world_state(),
         similar_cases=[],
+    )
+
+
+def _feature_bundle_cycle_mismatch(
+    context: AlphaAnalysisContext,
+) -> AlphaAnalysisContext:
+    return context.model_copy(
+        update={
+            "feature_bundle": context.feature_bundle.model_copy(
+                update={"cycle_id": "cycle_other"},
+            ),
+        },
+    )
+
+
+def _world_state_cycle_mismatch(
+    context: AlphaAnalysisContext,
+) -> AlphaAnalysisContext:
+    return context.model_copy(
+        update={
+            "world_state": context.world_state.model_copy(
+                update={"cycle_id": "cycle_other"},
+            ),
+        },
+    )
+
+
+def _feature_bundle_entity_mismatch(
+    context: AlphaAnalysisContext,
+) -> AlphaAnalysisContext:
+    return context.model_copy(
+        update={
+            "feature_bundle": context.feature_bundle.model_copy(
+                update={"entity_id": "ENT_OTHER"},
+            ),
+        },
     )
 
 
@@ -107,3 +147,48 @@ def test_multi_agent_analyzer_returns_multi_agent_result() -> None:
 
     assert result.analyzer_type == MULTI_AGENT_ANALYZER
     assert result.status == "ok"
+
+
+@pytest.mark.parametrize(
+    "analyzer_factory",
+    [
+        SinglePromptAnalyzer,
+        MultiAgentAnalyzer,
+    ],
+)
+@pytest.mark.parametrize(
+    ("entity_id", "context_mutation", "message"),
+    [
+        (
+            "ENT_OTHER",
+            lambda context: context,
+            "entity_id must match context.entity_id",
+        ),
+        (
+            ENTITY_ID,
+            _feature_bundle_cycle_mismatch,
+            "context.feature_bundle.cycle_id must match context.cycle_id",
+        ),
+        (
+            ENTITY_ID,
+            _world_state_cycle_mismatch,
+            "context.world_state.cycle_id must match context.cycle_id",
+        ),
+        (
+            ENTITY_ID,
+            _feature_bundle_entity_mismatch,
+            "context.feature_bundle.entity_id must match context.entity_id",
+        ),
+    ],
+)
+def test_analyzer_implementations_reject_mismatched_contexts(
+    analyzer_factory: Callable[[], AnalyzerInterface],
+    entity_id: str,
+    context_mutation: Callable[[AlphaAnalysisContext], AlphaAnalysisContext],
+    message: str,
+) -> None:
+    analyzer = analyzer_factory()
+    context = context_mutation(_analysis_context())
+
+    with pytest.raises(AlphaAnalyzerError, match=message):
+        analyzer.analyze(entity_id, context)

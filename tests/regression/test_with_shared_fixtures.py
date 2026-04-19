@@ -100,41 +100,106 @@ class TestPhaseResultsExpectAllFourPhases:
             )
 
 
-class TestRuntimeWorldStateModelAcceptsFixtureManifestRef:
-    """**This is the real-runtime regression** (iron rule #5).
+class TestRuntimeFixtureDrivenL5PoolSelection:
+    """**This is the real-runtime regression** (iron rule #5, codex
+    stage-2.3 review #2).
 
-    For every minimal_cycle case, take the fixture-declared
-    cycle_publish_manifest_id (a string per the §10 plan) and confirm
-    the runtime WorldStateSnapshot model can carry it through its
-    Pydantic validation pipeline if main-core elects to embed it as a
-    cycle reference (or, at minimum, the model's expected
-    cycle_publish_manifest field name is in scope).
+    For every minimal_cycle case, build a WorldStateSnapshot + minimal
+    FeatureSignalBundle from ``case.input.candidate_universe`` and run
+    ``main_core.l5_universe.service.select_official_alpha_pool``.
+    Assert the produced ``OfficialAlphaPool`` matches the fixture's
+    ``case.expected.cycle_publish_manifest`` shape (capacity, candidate
+    membership) and the §9 invariant ``capacity <= 100``.
 
-    We don't construct a fully-populated WorldStateSnapshot here (P2
-    scaffold may not yet have all required fields); we only confirm the
-    runtime model rejects shape-incompatible inputs cleanly. This still
-    exercises real runtime Pydantic validators, which is what iron rule
-    #5 requires.
+    This is the codex-required real-runtime regression: fixture
+    ``case.input`` drives a real main-core runtime function, the
+    function's output is asserted against ``case.expected``. Drift in
+    either the runtime or the fixture surfaces here.
     """
 
-    def test_world_state_snapshot_validator_rejects_obviously_invalid_payload(
-        self,
-    ) -> None:
-        from pydantic import ValidationError
+    @staticmethod
+    def _build_world_state_for(cycle_id: str) -> WorldStateSnapshot:
+        return WorldStateSnapshot(
+            cycle_id=cycle_id,
+            baseline_regime="neutral",
+            llm_delta=0,
+            final_regime="neutral",
+            llm_rationale="regression test rationale",
+            actual_model_used="gpt-4o-mini",
+            actual_provider="openai",
+            fallback_path=[],
+        )
 
-        # Fully-empty payload: should raise ValidationError because
-        # WorldStateSnapshot has at least one required field
-        # (asserted by smoke_hook + contract tests).
-        try:
-            WorldStateSnapshot()
-        except ValidationError:
-            return
-        # If construction succeeds with no args, the model has no
-        # required fields, which contradicts our assumption that it
-        # carries L4 state. Surface as a clear failure.
-        import pytest
+    @staticmethod
+    def _build_minimal_bundle(cycle_id: str, entity_id: str):
+        from main_core.common.schemas.feature_bundle import FeatureSignalBundle
 
-        pytest.fail(
-            "WorldStateSnapshot() with no args must raise ValidationError "
-            "(model must have at least one required L4-state field)"
+        return FeatureSignalBundle(
+            cycle_id=cycle_id,
+            entity_id=entity_id,
+            feature_values={"momentum": 0.5},
+            signal_values={},
+            graph_features={},
+            feature_weight_multiplier={"momentum": 1.0},
+        )
+
+    def test_select_official_alpha_pool_consumes_fixture_input(self) -> None:
+        from main_core.l5_universe.service import select_official_alpha_pool
+
+        exercised_at_least_one = False
+        for ref in iter_cases("minimal_cycle"):
+            case = load_case(ref.pack_name, ref.case_id)
+            cycle_id = case.input["cycle_id"]
+            candidates = case.input.get("candidate_universe", [])
+            if not candidates:
+                # Some future minimal_cycle cases may carry no
+                # candidates (e.g. holiday cycle); skip those.
+                continue
+            exercised_at_least_one = True
+
+            world_state = self._build_world_state_for(cycle_id)
+            bundles = [
+                self._build_minimal_bundle(cycle_id, c["canonical_entity_id"])
+                for c in candidates
+            ]
+
+            # Real runtime call — drives main-core's L5 selection.
+            pool = select_official_alpha_pool(
+                world_state=world_state,
+                bundles=bundles,
+                capacity=100,
+            )
+
+            # 1. Pool cycle_id matches fixture cycle_id.
+            assert pool.cycle_id == cycle_id, (
+                f"{ref.case_id}: pool.cycle_id {pool.cycle_id!r} != "
+                f"fixture {cycle_id!r}"
+            )
+            # 2. §9 invariant: capacity ≤ 100 (CLAUDE.md
+            # official_alpha_pool_capacity 默认上限 100).
+            assert pool.official_alpha_pool_capacity <= 100, (
+                f"{ref.case_id}: capacity {pool.official_alpha_pool_capacity}"
+                " breaks the §9 cap"
+            )
+            # 3. Selected entities subset of fixture candidate ids.
+            fixture_ent_ids = {c["canonical_entity_id"] for c in candidates}
+            assert all(
+                str(e) in fixture_ent_ids for e in pool.selected_entities
+            ), (
+                f"{ref.case_id}: pool selected entities not in fixture "
+                f"candidate set"
+            )
+            # 4. Cross-check against fixture's expected
+            # cycle_publish_manifest declaration: must contain
+            # official_alpha_pool table (main-core owns publishing it).
+            tables = case.expected.get("cycle_publish_manifest", {}).get(
+                "tables", {}
+            )
+            assert "official_alpha_pool" in tables, (
+                f"{ref.case_id}: expected.cycle_publish_manifest.tables "
+                f"missing official_alpha_pool"
+            )
+
+        assert exercised_at_least_one, (
+            "expected at least one minimal_cycle case with candidate_universe"
         )

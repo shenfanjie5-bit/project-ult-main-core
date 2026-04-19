@@ -72,38 +72,71 @@ class TestL4SharedStateBoundary:
 
 class TestWorldStateLLMDeltaRange:
     """llm_delta must be confined to integer values in {-1, 0, +1}
-    (CLAUDE.md §9). Try out-of-range values and confirm the model
-    rejects them.
+    (CLAUDE.md §9 invariant; world_state.py declares it as
+    ``Literal[-1, 0, 1]``).
 
-    If the WorldStateSnapshot model does not yet have a validator (P2
-    early scaffold), this test xfails with a clear marker so we don't
-    silently miss the constraint when it gets added.
+    Constructed in two stages to avoid the codex-flagged false-positive
+    where missing-required-field errors mask a missing range validator:
+    first build a fully-valid baseline payload, then mutate ONLY
+    llm_delta and assert the resulting ValidationError specifically
+    points at the llm_delta field.
     """
 
-    def test_llm_delta_rejects_out_of_range(self) -> None:
+    @staticmethod
+    def _baseline_valid_payload() -> dict[str, object]:
+        return {
+            "cycle_id": "CYC_2025_01_03_DAILY",
+            "baseline_regime": "neutral",
+            "llm_delta": 0,
+            "final_regime": "neutral",
+            "llm_rationale": "boundary-test rationale",
+            "actual_model_used": "gpt-4o-mini",
+            "actual_provider": "openai",
+            "fallback_path": [],
+        }
+
+    def test_baseline_payload_is_actually_valid(self) -> None:
+        """Self-test: confirm baseline accepts cleanly. If this fails,
+        all the negative tests below would false-positive on a
+        ValidationError unrelated to llm_delta."""
+        from main_core.common.schemas.world_state import WorldStateSnapshot
+
+        WorldStateSnapshot(**self._baseline_valid_payload())  # raises iff broken
+
+    @pytest.mark.parametrize("bad_delta", [99, -2, 2, 100])
+    def test_llm_delta_out_of_range_rejected_with_field_loc(
+        self, bad_delta: int
+    ) -> None:
         from pydantic import ValidationError
         from main_core.common.schemas.world_state import WorldStateSnapshot
 
-        # Construct a minimum-required-fields payload and inject an
-        # invalid llm_delta. We don't enumerate every required field;
-        # we only need ValidationError raised — whether from llm_delta
-        # range or other missing fields, the test still demonstrates
-        # the model rejects the bad value (would only false-pass if the
-        # model accepted llm_delta=99 + missing-fields with no error).
-        payload_with_bad_delta = {"llm_delta": 99}
-        try:
-            WorldStateSnapshot(**payload_with_bad_delta)
-        except ValidationError as exc:
-            # Either the validator caught llm_delta=99 directly, or
-            # missing-fields fired first — both are acceptable: the
-            # model is not silently accepting bad input.
-            errors = exc.errors()
-            assert errors, "ValidationError raised but with no errors"
-            return
-        pytest.fail(
-            "WorldStateSnapshot accepted llm_delta=99 with no error — "
-            "CLAUDE.md §9 invariant broken"
+        payload = self._baseline_valid_payload()
+        payload["llm_delta"] = bad_delta
+
+        with pytest.raises(ValidationError) as excinfo:
+            WorldStateSnapshot(**payload)
+
+        # The ValidationError must be specifically about llm_delta —
+        # not about a missing required field. Otherwise this test would
+        # false-pass even if the range constraint were dropped.
+        offending_locs = [tuple(err["loc"]) for err in excinfo.value.errors()]
+        assert ("llm_delta",) in offending_locs, (
+            f"ValidationError did not flag llm_delta: locs={offending_locs}"
         )
+
+    def test_llm_delta_accepts_only_minus_one_zero_one(self) -> None:
+        """Positive test: every value in {-1, 0, +1} is accepted with
+        a corresponding final_regime that satisfies the model_validator.
+        """
+        from main_core.common.schemas.world_state import WorldStateSnapshot
+
+        # baseline_regime=neutral; valid (delta -> final_regime) pairs.
+        valid_pairs = [(-1, "risk_off"), (0, "neutral"), (1, "risk_on")]
+        for delta, final_regime in valid_pairs:
+            payload = self._baseline_valid_payload()
+            payload["llm_delta"] = delta
+            payload["final_regime"] = final_regime
+            WorldStateSnapshot(**payload)  # raises iff broken
 
 
 # ── #3 public.py 边界扫描（subprocess-isolated）──────────────────

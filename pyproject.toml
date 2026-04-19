@@ -4,19 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "project-ult-main-core"
-version = "0.1.0"
-description = "Scaffold workspace for main-core."
+version = "0.1.1"
+description = "L1-L8 business chain + shared state + formal publish for project-ult."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pydantic>=2.6"]
 
 [project.optional-dependencies]
+# Pure-pip dev tools — offline-first per SUBPROJECT_TESTING_STANDARD.md §2.2.
+# Used by test-fast / smoke CI lanes. Never includes git+URL deps.
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "ruff>=0.5",
     "import-linter>=2.0",
-    "pydantic>=2.6",
+]
+# Shared regression fixtures bundled with project-ult-audit-eval.
+# Pinned to v0.2.1 (real sha256 fixture hashes; iron rule #6 + stage 2.2
+# follow-up).
+shared-fixtures = [
+    "project-ult-audit-eval @ git+https://github.com/shenfanjie5-bit/project-ult-audit-eval.git@v0.2.1",
 ]
 
 [tool.setuptools.package-dir]

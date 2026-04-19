@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from main_core.common.errors import AlphaAnalyzerError
 from main_core.common.schemas import (
     FeatureSignalBundle,
     WorldStateSnapshot,
@@ -23,6 +24,28 @@ class AlphaAnalysisContext(BaseModel):
     feature_bundle: FeatureSignalBundle
     world_state: WorldStateSnapshot
     similar_cases: list[dict[str, Any]] = Field(default_factory=list)
+
+
+def validate_alpha_analysis_context(
+    entity_id: EntityId,
+    context: AlphaAnalysisContext,
+) -> None:
+    """Validate the L6 analyzer input contract before provider work."""
+
+    if entity_id != context.entity_id:
+        raise AlphaAnalyzerError("entity_id must match context.entity_id")
+    if context.feature_bundle.cycle_id != context.cycle_id:
+        raise AlphaAnalyzerError(
+            "context.feature_bundle.cycle_id must match context.cycle_id",
+        )
+    if context.world_state.cycle_id != context.cycle_id:
+        raise AlphaAnalyzerError(
+            "context.world_state.cycle_id must match context.cycle_id",
+        )
+    if context.feature_bundle.entity_id != context.entity_id:
+        raise AlphaAnalyzerError(
+            "context.feature_bundle.entity_id must match context.entity_id",
+        )
 
 
 class WorldStateInputs(BaseModel):
@@ -49,4 +72,5 @@ __all__ = [
     "AlphaAnalysisContext",
     "RecommendationConstraintInputs",
     "WorldStateInputs",
+    "validate_alpha_analysis_context",
 ]

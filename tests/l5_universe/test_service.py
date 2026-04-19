@@ -13,6 +13,7 @@ from main_core.l5_universe.types import MAX_OFFICIAL_ALPHA_POOL_CAPACITY
 
 DEFAULT_OBSERVATION_SIZE = 3
 THRESHOLDED_OBSERVATION_SIZE = 2
+FROZEN_INCLUSIVE_OBSERVATION_SIZE = 2
 TWO_ENTITY_CAPACITY = 2
 
 
@@ -141,7 +142,29 @@ def test_select_official_alpha_pool_carries_frozen_entities_outside_threshold() 
         config=PoolSelectionConfig(capacity=2, min_candidate_score=1.0),
     )
 
-    assert pool.observation_pool_size == 1
+    assert pool.observation_pool_size == FROZEN_INCLUSIVE_OBSERVATION_SIZE
+    assert pool.selected_entities == ("ENT_C", "ENT_A")
+    assert pool.freeze_reason_map == {"ENT_C": "existing core freeze"}
+
+
+def test_select_official_alpha_pool_counts_frozen_entities_outside_observation_limit() -> None:
+    previous_pool = _pool(
+        selected_entities=["ENT_C"],
+        freeze_reason_map={"ENT_C": "existing core freeze"},
+    )
+
+    pool = select_official_alpha_pool(
+        _world_state(),
+        [
+            _bundle("ENT_A", 10.0),
+            _bundle("ENT_B", 9.0),
+            _bundle("ENT_C", 0.0),
+        ],
+        previous_pool=previous_pool,
+        config=PoolSelectionConfig(capacity=2, observation_limit=1),
+    )
+
+    assert pool.observation_pool_size == FROZEN_INCLUSIVE_OBSERVATION_SIZE
     assert pool.selected_entities == ("ENT_C", "ENT_A")
     assert pool.freeze_reason_map == {"ENT_C": "existing core freeze"}
 

@@ -123,6 +123,41 @@ def test_official_alpha_pool_rejects_selected_exceeding_observation_pool() -> No
     payload["observation_pool_size"] = 1
     payload["official_alpha_pool_capacity"] = 5
     payload["selected_entities"] = ["ENT_001", "ENT_002"]
+    payload["freeze_reason_map"] = {}
 
     with pytest.raises(ValidationError, match="observation_pool_size"):
+        OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_allows_selected_frozen_entities_with_eligible_count() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = 2
+    payload["official_alpha_pool_capacity"] = 5
+    payload["selected_entities"] = ["ENT_001", "ENT_002"]
+    payload["freeze_reason_map"] = {"ENT_001": "existing core freeze"}
+
+    pool = OfficialAlphaPool(**payload)
+
+    assert pool.selected_entities == ("ENT_001", "ENT_002")
+
+
+def test_official_alpha_pool_rejects_freeze_reason_map_as_eligibility_proof() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = 0
+    payload["official_alpha_pool_capacity"] = 5
+    payload["selected_entities"] = ["ENT_001", "ENT_002"]
+    payload["freeze_reason_map"] = {
+        "ENT_001": "forged freeze",
+        "ENT_002": "forged freeze",
+    }
+
+    with pytest.raises(ValidationError, match="observation_pool_size"):
+        OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_rejects_freeze_reason_for_unselected_entity() -> None:
+    payload = _pool_payload()
+    payload["freeze_reason_map"] = {"ENT_003": "unselected freeze"}
+
+    with pytest.raises(ValidationError, match="freeze_reason_map keys"):
         OfficialAlphaPool(**payload)

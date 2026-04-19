@@ -52,7 +52,10 @@ def select_official_alpha_pool(  # noqa: PLR0913
 
     return OfficialAlphaPool(
         cycle_id=world_state.cycle_id,
-        observation_pool_size=len(observation_candidates),
+        observation_pool_size=_count_eligible_entities(
+            observation_candidates,
+            freeze_reason_map,
+        ),
         official_alpha_pool_capacity=active_config.capacity,
         selected_entities=selected_entities,
         added_entities=added_entities,
@@ -123,6 +126,17 @@ def _select_entities(
         )
 
     return selected_entities
+
+
+def _count_eligible_entities(
+    observation_candidates: Sequence[FeatureSignalBundle],
+    freeze_reason_map: Mapping[EntityId, str],
+) -> int:
+    """Count the validated frozen-inclusive pool the schema uses as its bound."""
+
+    eligible_entity_ids = {str(bundle.entity_id) for bundle in observation_candidates}
+    eligible_entity_ids.update(str(entity_id) for entity_id in freeze_reason_map)
+    return len(eligible_entity_ids)
 
 
 def _append_if_room(

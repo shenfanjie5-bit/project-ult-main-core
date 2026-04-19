@@ -56,7 +56,7 @@ def submit_override(
     """Validate, store, and return a human override record."""
 
     override = _coerce_override(override_input)
-    active_store = store or _DEFAULT_OVERRIDE_STORE
+    active_store = store if store is not None else _DEFAULT_OVERRIDE_STORE
     return active_store.save(override)
 
 

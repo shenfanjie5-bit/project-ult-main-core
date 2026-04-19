@@ -133,6 +133,36 @@ def test_ab_report_markdown_uses_stable_summary_and_case_tables() -> None:
     assert "| case-a | ENT_A | single_prompt_v1 | multi_agent_v1 |" in markdown
 
 
+def test_run_ab_evaluation_rejects_empty_cases() -> None:
+    baseline = RecordingAnalyzer("single_prompt_v1", {})
+    challenger = RecordingAnalyzer("multi_agent_v1", {})
+
+    with pytest.raises(ValueError, match="at least one case"):
+        run_ab_evaluation([], baseline=baseline, challenger=challenger)
+
+
+def test_run_ab_evaluation_records_per_case_analyzer_failures() -> None:
+    class FailingAnalyzer:
+        analyzer_type = "multi_agent_v1"
+
+        def analyze(self, entity_id, context):  # type: ignore[no-untyped-def]
+            raise RuntimeError("provider unavailable")
+
+    baseline = RecordingAnalyzer(
+        "single_prompt_v1",
+        {"ENT_A": _alpha_result("ENT_A", "single_prompt_v1", 0.5, 0.7, "ok")},
+    )
+    cases = [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))]
+
+    report = run_ab_evaluation(cases, baseline=baseline, challenger=FailingAnalyzer())
+
+    assert report.challenger_failure_count == 1
+    assert report.baseline_failure_count == 0
+    assert report.cases[0].challenger_status == "error"
+    assert "RuntimeError" in (report.cases[0].challenger_error or "")
+    assert report.cases[0].status_matches is False
+
+
 def test_write_ab_report_writes_json_and_markdown(tmp_path) -> None:
     report = run_ab_evaluation(
         [AbEvaluationCase("case-a", "ENT_A", _context("ENT_A"))],

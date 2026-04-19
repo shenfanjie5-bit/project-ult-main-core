@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from main_core.common.contexts import AlphaAnalysisContext
-from main_core.common.errors import MainCoreError
+from main_core.common.errors import AlphaAnalyzerError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot, single_prompt_result
 from main_core.common.types import EntityId
@@ -17,10 +17,6 @@ from main_core.l6_alpha.reasoner_port import (
     AlphaReasonerPort,
     StaticAlphaReasonerPort,
 )
-
-
-class AlphaAnalyzerError(MainCoreError):
-    """Raised when the L6 analyzer contract is violated before provider work."""
 
 
 class SinglePromptAnalyzer(AnalyzerBase):
@@ -40,6 +36,18 @@ class SinglePromptAnalyzer(AnalyzerBase):
 
         if entity_id != context.entity_id:
             raise AlphaAnalyzerError("entity_id must match context.entity_id")
+        if context.feature_bundle.cycle_id != context.cycle_id:
+            raise AlphaAnalyzerError(
+                "context.feature_bundle.cycle_id must match context.cycle_id",
+            )
+        if context.world_state.cycle_id != context.cycle_id:
+            raise AlphaAnalyzerError(
+                "context.world_state.cycle_id must match context.cycle_id",
+            )
+        if context.feature_bundle.entity_id != context.entity_id:
+            raise AlphaAnalyzerError(
+                "context.feature_bundle.entity_id must match context.entity_id",
+            )
 
         try:
             response = self._reasoner_port.analyze_alpha(entity_id, context)

@@ -67,7 +67,9 @@ def test_feature_signal_bundle_rejects_non_positive_or_non_finite_multiplier(
     payload = _bundle_payload()
     payload["feature_weight_multiplier"] = {"momentum": multiplier}
 
-    with pytest.raises(ValidationError, match="finite and > 0"):
+    # Either the field validator (finite and > 0) or pydantic's allow_inf_nan=False
+    # field-level rejection (finite_number) is acceptable; both protect the invariant.
+    with pytest.raises(ValidationError, match=r"finite and > 0|finite_number"):
         FeatureSignalBundle(**payload)
 
 

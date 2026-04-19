@@ -108,3 +108,21 @@ def test_official_alpha_pool_rejects_capacity_outside_hard_bounds(capacity: int)
 
     with pytest.raises(ValidationError):
         OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_rejects_negative_observation_pool_size() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = -1
+
+    with pytest.raises(ValidationError):
+        OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_rejects_selected_exceeding_observation_pool() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = 1
+    payload["official_alpha_pool_capacity"] = 5
+    payload["selected_entities"] = ["ENT_001", "ENT_002"]
+
+    with pytest.raises(ValidationError, match="observation_pool_size"):
+        OfficialAlphaPool(**payload)

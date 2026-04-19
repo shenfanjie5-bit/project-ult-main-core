@@ -109,6 +109,18 @@ def test_build_dashboard_snapshot_allows_empty_recommendation_list() -> None:
     }
 
 
+def test_build_dashboard_snapshot_rejects_stale_world_state_ref() -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].__setitem__(
+            "ref",
+            "world_state_snapshot/cycle_other/ref",
+        )
+    )
+
+    with pytest.raises(ManifestPublishError, match="cycle_id"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
 def _base_bundle(source: FakeFormalObjectSource | None = None) -> PublishBundle:
     return prepare_publish_bundle(
         "cycle_l8",

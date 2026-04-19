@@ -145,6 +145,7 @@ def _mapping_entry(
 ) -> _FormalObjectEntry:
     entry = _entry_mapping(bundle, object_key)
     ref = formal_object_ref(bundle, object_key)
+    _ensure_ref_belongs_to_cycle(object_key, ref, cycle_id)
     payload = entry.get("payload", _MISSING)
     if not isinstance(payload, Mapping):
         raise ManifestPublishError(f"{object_key}.payload must be a mapping")
@@ -163,6 +164,7 @@ def _list_entry(
 ) -> _FormalObjectEntry:
     entry = _entry_mapping(bundle, object_key)
     ref = formal_object_ref(bundle, object_key)
+    _ensure_ref_belongs_to_cycle(object_key, ref, cycle_id)
     payload = entry.get("payload", _MISSING)
     if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
         raise ManifestPublishError(f"{object_key}.payload must be a list")
@@ -210,6 +212,26 @@ def _ensure_payload_cycle(
 ) -> None:
     if payload.get("cycle_id") != str(cycle_id):
         raise ManifestPublishError(f"{object_key}.payload cycle_id must match")
+
+
+def _ensure_ref_belongs_to_cycle(
+    object_key: str,
+    ref: str,
+    cycle_id: CycleId,
+) -> None:
+    """Require the canonical ref to contain the requested cycle_id as a path segment.
+
+    Substring containment is too loose: a stale ref ``world_state_snapshot/cycle_l8_other/ref``
+    would pass a naive ``in`` check for ``cycle_l8``. Splitting on ``/`` ensures the
+    cycle_id is an exact path segment of the ref.
+    """
+
+    expected_cycle = str(cycle_id)
+    segments = ref.split("/")
+    if expected_cycle not in segments:
+        raise ManifestPublishError(
+            f"{object_key}.ref must point to requested cycle_id {expected_cycle!r}",
+        )
 
 
 def _as_mapping(

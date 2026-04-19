@@ -219,18 +219,17 @@ def _ensure_ref_belongs_to_cycle(
     ref: str,
     cycle_id: CycleId,
 ) -> None:
-    """Require the canonical ref to contain the requested cycle_id as a path segment.
-
-    Substring containment is too loose: a stale ref ``world_state_snapshot/cycle_l8_other/ref``
-    would pass a naive ``in`` check for ``cycle_l8``. Splitting on ``/`` ensures the
-    cycle_id is an exact path segment of the ref.
-    """
-
     expected_cycle = str(cycle_id)
     segments = ref.split("/")
-    if expected_cycle not in segments:
+    if (
+        len(segments) != 3
+        or segments[0] != object_key
+        or segments[1] != expected_cycle
+        or not segments[2]
+    ):
         raise ManifestPublishError(
-            f"{object_key}.ref must point to requested cycle_id {expected_cycle!r}",
+            f"{object_key}.ref must use canonical {object_key}/"
+            f"{expected_cycle}/<ref> shape for requested cycle_id",
         )
 
 

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from main_core.common.contexts import AlphaAnalysisContext
+from main_core.common.contexts import (
+    AlphaAnalysisContext,
+    validate_alpha_analysis_context,
+)
 from main_core.common.errors import AlphaAnalyzerError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot, single_prompt_result
@@ -34,20 +37,7 @@ class SinglePromptAnalyzer(AnalyzerBase):
     ) -> AlphaResultSnapshot:
         """Analyze one entity and downgrade only task-level failures."""
 
-        if entity_id != context.entity_id:
-            raise AlphaAnalyzerError("entity_id must match context.entity_id")
-        if context.feature_bundle.cycle_id != context.cycle_id:
-            raise AlphaAnalyzerError(
-                "context.feature_bundle.cycle_id must match context.cycle_id",
-            )
-        if context.world_state.cycle_id != context.cycle_id:
-            raise AlphaAnalyzerError(
-                "context.world_state.cycle_id must match context.cycle_id",
-            )
-        if context.feature_bundle.entity_id != context.entity_id:
-            raise AlphaAnalyzerError(
-                "context.feature_bundle.entity_id must match context.entity_id",
-            )
+        validate_alpha_analysis_context(entity_id, context)
 
         try:
             response = self._reasoner_port.analyze_alpha(entity_id, context)

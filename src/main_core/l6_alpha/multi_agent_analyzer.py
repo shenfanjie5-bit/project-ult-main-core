@@ -8,7 +8,10 @@ from math import fsum, isfinite
 from types import MappingProxyType
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
-from main_core.common.contexts import AlphaAnalysisContext
+from main_core.common.contexts import (
+    AlphaAnalysisContext,
+    validate_alpha_analysis_context,
+)
 from main_core.common.errors import AlphaAnalyzerError, InconclusiveError, MainCoreError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot
@@ -199,8 +202,7 @@ class MultiAgentAnalyzer(AnalyzerBase):
     ) -> AlphaResultSnapshot:
         """Analyze one entity by invoking each configured role exactly once."""
 
-        if entity_id != context.entity_id:
-            raise AlphaAnalyzerError("entity_id must match context.entity_id")
+        validate_alpha_analysis_context(entity_id, context)
 
         payload = build_multi_agent_input_payload(entity_id, context)
         role_results: list[MultiAgentRoleResult] = []

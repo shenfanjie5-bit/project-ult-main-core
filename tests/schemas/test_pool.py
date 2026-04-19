@@ -123,6 +123,19 @@ def test_official_alpha_pool_rejects_selected_exceeding_observation_pool() -> No
     payload["observation_pool_size"] = 1
     payload["official_alpha_pool_capacity"] = 5
     payload["selected_entities"] = ["ENT_001", "ENT_002"]
+    payload["freeze_reason_map"] = {}
 
     with pytest.raises(ValidationError, match="observation_pool_size"):
         OfficialAlphaPool(**payload)
+
+
+def test_official_alpha_pool_allows_frozen_selected_entities_outside_observation_pool() -> None:
+    payload = _pool_payload()
+    payload["observation_pool_size"] = 1
+    payload["official_alpha_pool_capacity"] = 5
+    payload["selected_entities"] = ["ENT_001", "ENT_002"]
+    payload["freeze_reason_map"] = {"ENT_001": "existing core freeze"}
+
+    pool = OfficialAlphaPool(**payload)
+
+    assert pool.selected_entities == ("ENT_001", "ENT_002")

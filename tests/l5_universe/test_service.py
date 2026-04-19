@@ -124,6 +124,28 @@ def test_select_official_alpha_pool_prioritizes_frozen_entities() -> None:
     assert pool.freeze_reason_map == {"ENT_C": "existing core freeze"}
 
 
+def test_select_official_alpha_pool_carries_frozen_entities_outside_threshold() -> None:
+    previous_pool = _pool(
+        selected_entities=["ENT_C"],
+        freeze_reason_map={"ENT_C": "existing core freeze"},
+    )
+
+    pool = select_official_alpha_pool(
+        _world_state(),
+        [
+            _bundle("ENT_A", 10.0),
+            _bundle("ENT_B", 0.5),
+            _bundle("ENT_C", 0.0),
+        ],
+        previous_pool=previous_pool,
+        config=PoolSelectionConfig(capacity=2, min_candidate_score=1.0),
+    )
+
+    assert pool.observation_pool_size == 1
+    assert pool.selected_entities == ("ENT_C", "ENT_A")
+    assert pool.freeze_reason_map == {"ENT_C": "existing core freeze"}
+
+
 def test_select_official_alpha_pool_merges_explicit_frozen_entities() -> None:
     pool = select_official_alpha_pool(
         _world_state(),

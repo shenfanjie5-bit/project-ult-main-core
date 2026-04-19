@@ -144,6 +144,17 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
         )
 
     def test_select_official_alpha_pool_consumes_fixture_input(self) -> None:
+        """Real-runtime call sweep: every minimal_cycle case is fed
+        through select_official_alpha_pool. Generic L5 invariants are
+        asserted here (cycle_id round-trip, §9 capacity cap, candidate
+        membership, manifest declares the published table).
+
+        The case-specific business expectation (e.g. "1-candidate cycle
+        produces a pool of size 1") is asserted in
+        ``test_one_candidate_cycle_produces_one_entity_pool`` below so
+        the assertion is keyed to a known fixture shape rather than a
+        generic invariant — that's the codex stage-2.3 review #2 fix.
+        """
         from main_core.l5_universe.service import select_official_alpha_pool
 
         exercised_at_least_one = False
@@ -152,8 +163,6 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
             cycle_id = case.input["cycle_id"]
             candidates = case.input.get("candidate_universe", [])
             if not candidates:
-                # Some future minimal_cycle cases may carry no
-                # candidates (e.g. holiday cycle); skip those.
                 continue
             exercised_at_least_one = True
 
@@ -162,26 +171,20 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
                 self._build_minimal_bundle(cycle_id, c["canonical_entity_id"])
                 for c in candidates
             ]
-
-            # Real runtime call — drives main-core's L5 selection.
             pool = select_official_alpha_pool(
                 world_state=world_state,
                 bundles=bundles,
                 capacity=100,
             )
 
-            # 1. Pool cycle_id matches fixture cycle_id.
             assert pool.cycle_id == cycle_id, (
                 f"{ref.case_id}: pool.cycle_id {pool.cycle_id!r} != "
                 f"fixture {cycle_id!r}"
             )
-            # 2. §9 invariant: capacity ≤ 100 (CLAUDE.md
-            # official_alpha_pool_capacity 默认上限 100).
             assert pool.official_alpha_pool_capacity <= 100, (
                 f"{ref.case_id}: capacity {pool.official_alpha_pool_capacity}"
                 " breaks the §9 cap"
             )
-            # 3. Selected entities subset of fixture candidate ids.
             fixture_ent_ids = {c["canonical_entity_id"] for c in candidates}
             assert all(
                 str(e) in fixture_ent_ids for e in pool.selected_entities
@@ -189,9 +192,6 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
                 f"{ref.case_id}: pool selected entities not in fixture "
                 f"candidate set"
             )
-            # 4. Cross-check against fixture's expected
-            # cycle_publish_manifest declaration: must contain
-            # official_alpha_pool table (main-core owns publishing it).
             tables = case.expected.get("cycle_publish_manifest", {}).get(
                 "tables", {}
             )
@@ -202,4 +202,70 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
 
         assert exercised_at_least_one, (
             "expected at least one minimal_cycle case with candidate_universe"
+        )
+
+    def test_one_candidate_cycle_produces_one_entity_pool(self) -> None:
+        """Business-expectation regression (codex stage-2.3 review #2 fix).
+
+        For ``minimal_cycle/case_001_one_stock_one_cycle`` the fixture
+        carries exactly 1 candidate (CATL / ENT_STOCK_300750_SZ). The
+        L5 service contract says: with no previous_pool, no frozen
+        entities, and capacity=100, every eligible candidate is
+        selected. The expected business outcome is therefore:
+
+          - selected_entities == [the single candidate id]
+          - observation_pool_size == 1
+          - added_entities  == [the single candidate id]   (no previous pool)
+          - removed_entities == [] (no previous pool)
+          - freeze_reason_map == {}
+
+        A regression that returns an empty pool, a pool missing the
+        candidate, or an over-counted pool would fail here — which is
+        exactly what the previous "generic invariants only" version
+        could not catch.
+        """
+        from main_core.l5_universe.service import select_official_alpha_pool
+
+        case = load_case("minimal_cycle", "case_001_one_stock_one_cycle")
+        candidates = case.input["candidate_universe"]
+        assert len(candidates) == 1, (
+            "fixture invariant: case_001_one_stock_one_cycle must carry "
+            "exactly one candidate; if you intentionally added more, "
+            "update this test to derive the expectation accordingly"
+        )
+        expected_entity_id = candidates[0]["canonical_entity_id"]
+        cycle_id = case.input["cycle_id"]
+
+        world_state = self._build_world_state_for(cycle_id)
+        bundle = self._build_minimal_bundle(cycle_id, expected_entity_id)
+
+        pool = select_official_alpha_pool(
+            world_state=world_state,
+            bundles=[bundle],
+            capacity=100,
+        )
+
+        # Business-shape assertions tied to the 1-candidate fixture.
+        selected = [str(e) for e in pool.selected_entities]
+        added = [str(e) for e in pool.added_entities]
+        removed = [str(e) for e in pool.removed_entities]
+        assert selected == [expected_entity_id], (
+            f"selected_entities should be exactly [{expected_entity_id!r}], "
+            f"got {selected!r}"
+        )
+        assert pool.observation_pool_size == 1, (
+            f"observation_pool_size should be 1 for 1-candidate cycle; "
+            f"got {pool.observation_pool_size}"
+        )
+        assert added == [expected_entity_id], (
+            f"with no previous_pool, the candidate must show up as added; "
+            f"got {added!r}"
+        )
+        assert removed == [], (
+            f"with no previous_pool, removed_entities must be empty; "
+            f"got {removed!r}"
+        )
+        assert dict(pool.freeze_reason_map) == {}, (
+            f"freeze_reason_map should be empty (no frozen entities passed); "
+            f"got {dict(pool.freeze_reason_map)!r}"
         )

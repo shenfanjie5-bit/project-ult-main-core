@@ -145,6 +145,7 @@ def _mapping_entry(
 ) -> _FormalObjectEntry:
     entry = _entry_mapping(bundle, object_key)
     ref = formal_object_ref(bundle, object_key)
+    _ensure_ref_belongs_to_cycle(object_key, ref, cycle_id)
     payload = entry.get("payload", _MISSING)
     if not isinstance(payload, Mapping):
         raise ManifestPublishError(f"{object_key}.payload must be a mapping")
@@ -163,6 +164,7 @@ def _list_entry(
 ) -> _FormalObjectEntry:
     entry = _entry_mapping(bundle, object_key)
     ref = formal_object_ref(bundle, object_key)
+    _ensure_ref_belongs_to_cycle(object_key, ref, cycle_id)
     payload = entry.get("payload", _MISSING)
     if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
         raise ManifestPublishError(f"{object_key}.payload must be a list")
@@ -210,6 +212,25 @@ def _ensure_payload_cycle(
 ) -> None:
     if payload.get("cycle_id") != str(cycle_id):
         raise ManifestPublishError(f"{object_key}.payload cycle_id must match")
+
+
+def _ensure_ref_belongs_to_cycle(
+    object_key: str,
+    ref: str,
+    cycle_id: CycleId,
+) -> None:
+    expected_cycle = str(cycle_id)
+    segments = ref.split("/")
+    if (
+        len(segments) != 3
+        or segments[0] != object_key
+        or segments[1] != expected_cycle
+        or not segments[2]
+    ):
+        raise ManifestPublishError(
+            f"{object_key}.ref must use canonical {object_key}/"
+            f"{expected_cycle}/<ref> shape for requested cycle_id",
+        )
 
 
 def _as_mapping(

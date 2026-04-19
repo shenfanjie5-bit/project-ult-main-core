@@ -6,6 +6,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from main_core.common.contexts import AlphaAnalysisContext
 from main_core.common.protocols import AnalyzerInterface
@@ -42,6 +43,8 @@ class AbCaseResult:
     score_delta: float | None
     confidence_delta: float
     status_matches: bool
+    baseline_error: str | None = None
+    challenger_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,8 @@ class AbEvaluationReport:
     baseline_inconclusive_count: int
     challenger_inconclusive_count: int
     inconclusive_count_delta: int
+    baseline_failure_count: int
+    challenger_failure_count: int
     cases: tuple[AbCaseResult, ...]
 
 
@@ -66,7 +71,15 @@ def run_ab_evaluation(
     baseline: AnalyzerInterface,
     challenger: AnalyzerInterface,
 ) -> AbEvaluationReport:
-    """Run baseline and challenger analyzers on the same supplied contexts."""
+    """Run baseline and challenger analyzers on the same supplied contexts.
+
+    Per-analyzer exceptions are captured per case rather than aborting the
+    whole run. Empty case sequences are rejected so callers cannot interpret a
+    no-op as a successful comparison.
+    """
+
+    if not cases:
+        raise ValueError("run_ab_evaluation requires at least one case")
 
     case_results: list[AbCaseResult] = []
     score_abs_deltas: list[float] = []
@@ -74,43 +87,76 @@ def run_ab_evaluation(
     status_match_count = 0
     baseline_inconclusive_count = 0
     challenger_inconclusive_count = 0
+    baseline_failure_count = 0
+    challenger_failure_count = 0
 
     for case in cases:
-        baseline_result = baseline.analyze(case.entity_id, case.context)
-        challenger_result = challenger.analyze(case.entity_id, case.context)
+        baseline_result, baseline_error = _safe_analyze(baseline, case)
+        challenger_result, challenger_error = _safe_analyze(challenger, case)
 
-        status_matches = baseline_result.status == challenger_result.status
+        baseline_status = (
+            baseline_result.status if baseline_result is not None else "error"
+        )
+        challenger_status = (
+            challenger_result.status if challenger_result is not None else "error"
+        )
+        status_matches = baseline_status == challenger_status
         if status_matches:
             status_match_count += 1
-        if baseline_result.status == "inconclusive":
+        if baseline_status == "inconclusive":
             baseline_inconclusive_count += 1
-        if challenger_result.status == "inconclusive":
+        if challenger_status == "inconclusive":
             challenger_inconclusive_count += 1
+        if baseline_error is not None:
+            baseline_failure_count += 1
+        if challenger_error is not None:
+            challenger_failure_count += 1
+
+        baseline_score = baseline_result.score if baseline_result is not None else None
+        challenger_score = (
+            challenger_result.score if challenger_result is not None else None
+        )
+        baseline_confidence = (
+            baseline_result.confidence if baseline_result is not None else 0.0
+        )
+        challenger_confidence = (
+            challenger_result.confidence if challenger_result is not None else 0.0
+        )
 
         score_delta: float | None = None
-        if baseline_result.score is not None and challenger_result.score is not None:
-            score_delta = challenger_result.score - baseline_result.score
-            if baseline_result.status == "ok" and challenger_result.status == "ok":
+        if baseline_score is not None and challenger_score is not None:
+            score_delta = challenger_score - baseline_score
+            if baseline_status == "ok" and challenger_status == "ok":
                 score_abs_deltas.append(abs(score_delta))
 
-        confidence_delta = challenger_result.confidence - baseline_result.confidence
+        confidence_delta = challenger_confidence - baseline_confidence
         confidence_abs_deltas.append(abs(confidence_delta))
 
         case_results.append(
             AbCaseResult(
                 case_id=case.case_id,
                 entity_id=case.entity_id,
-                baseline_analyzer_type=baseline_result.analyzer_type,
-                challenger_analyzer_type=challenger_result.analyzer_type,
-                baseline_status=baseline_result.status,
-                challenger_status=challenger_result.status,
-                baseline_score=baseline_result.score,
-                challenger_score=challenger_result.score,
-                baseline_confidence=baseline_result.confidence,
-                challenger_confidence=challenger_result.confidence,
+                baseline_analyzer_type=(
+                    baseline_result.analyzer_type
+                    if baseline_result is not None
+                    else baseline.analyzer_type
+                ),
+                challenger_analyzer_type=(
+                    challenger_result.analyzer_type
+                    if challenger_result is not None
+                    else challenger.analyzer_type
+                ),
+                baseline_status=baseline_status,
+                challenger_status=challenger_status,
+                baseline_score=baseline_score,
+                challenger_score=challenger_score,
+                baseline_confidence=baseline_confidence,
+                challenger_confidence=challenger_confidence,
                 score_delta=score_delta,
                 confidence_delta=confidence_delta,
                 status_matches=status_matches,
+                baseline_error=baseline_error,
+                challenger_error=challenger_error,
             )
         )
 
@@ -129,8 +175,26 @@ def run_ab_evaluation(
         inconclusive_count_delta=(
             challenger_inconclusive_count - baseline_inconclusive_count
         ),
+        baseline_failure_count=baseline_failure_count,
+        challenger_failure_count=challenger_failure_count,
         cases=tuple(case_results),
     )
+
+
+def _safe_analyze(
+    analyzer: AnalyzerInterface,
+    case: AbEvaluationCase,
+) -> tuple[Any | None, str | None]:
+    """Run analyzer.analyze; return (result, error_message_or_none).
+
+    Captures per-case analyzer exceptions so an A/B run can complete and
+    record partial outcomes rather than aborting on the first failure.
+    """
+
+    try:
+        return analyzer.analyze(case.entity_id, case.context), None
+    except Exception as exc:  # noqa: BLE001 - explicit per-case capture
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def format_ab_report_json(report: AbEvaluationReport) -> str:
@@ -152,6 +216,8 @@ def format_ab_report_markdown(report: AbEvaluationReport) -> str:
         ("baseline_inconclusive_count", report.baseline_inconclusive_count),
         ("challenger_inconclusive_count", report.challenger_inconclusive_count),
         ("inconclusive_count_delta", report.inconclusive_count_delta),
+        ("baseline_failure_count", report.baseline_failure_count),
+        ("challenger_failure_count", report.challenger_failure_count),
     ]
     lines = [
         "# L6 A/B Evaluation",
@@ -206,6 +272,8 @@ def _report_payload(report: AbEvaluationReport) -> dict[str, object]:
         "baseline_inconclusive_count": report.baseline_inconclusive_count,
         "challenger_inconclusive_count": report.challenger_inconclusive_count,
         "inconclusive_count_delta": report.inconclusive_count_delta,
+        "baseline_failure_count": report.baseline_failure_count,
+        "challenger_failure_count": report.challenger_failure_count,
         "cases": [_case_payload(case) for case in report.cases],
     }
 
@@ -225,6 +293,8 @@ def _case_payload(case: AbCaseResult) -> dict[str, object]:
         "score_delta": case.score_delta,
         "confidence_delta": case.confidence_delta,
         "status_matches": case.status_matches,
+        "baseline_error": case.baseline_error,
+        "challenger_error": case.challenger_error,
     }
 
 

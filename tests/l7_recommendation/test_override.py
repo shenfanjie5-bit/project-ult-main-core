@@ -93,3 +93,41 @@ def test_apply_override_rejects_non_matching_override() -> None:
 
     with pytest.raises(MainCoreError, match="entity_id"):
         apply_override(_candidate(), override)
+
+
+def test_override_record_rejects_naive_submitted_at() -> None:
+    payload = _override_payload(submitted_at=datetime(2026, 1, 2, 3, 4, 5))
+
+    with pytest.raises(ValidationError, match="timezone-aware UTC"):
+        OverrideRecord(**payload)
+
+
+class _RecordingFalseyStore:
+    """Custom override store that is falsey but functionally valid.
+
+    Regression for #51: ``store or _DEFAULT_OVERRIDE_STORE`` would silently
+    bypass falsey custom stores. ``store if store is not None else ...`` does
+    not.
+    """
+
+    def __init__(self) -> None:
+        self.saved: list[OverrideRecord] = []
+
+    def __bool__(self) -> bool:
+        return False
+
+    def save(self, override: OverrideRecord) -> OverrideRecord:
+        self.saved.append(override)
+        return override
+
+    def list_overrides(self):  # type: ignore[no-untyped-def]
+        return tuple(self.saved)
+
+
+def test_submit_override_does_not_bypass_falsey_custom_store() -> None:
+    store = _RecordingFalseyStore()
+    override = OverrideRecord(**_override_payload())
+
+    submit_override(override, store=store)
+
+    assert store.saved == [override]

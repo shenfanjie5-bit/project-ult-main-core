@@ -143,3 +143,54 @@ def test_single_prompt_analyzer_does_not_reapply_feature_multipliers(
         observed_context.feature_bundle.feature_weight_multiplier["momentum"]
         == EXPECTED_FEATURE_MULTIPLIER
     )
+
+
+def test_single_prompt_analyzer_rejects_feature_bundle_cycle_mismatch(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    port = RecordingReasonerPort()
+    analyzer = SinglePromptAnalyzer(port)
+    mismatched = analysis_context.model_copy(
+        update={
+            "feature_bundle": analysis_context.feature_bundle.model_copy(
+                update={"cycle_id": "cycle_other"},
+            ),
+        },
+    )
+
+    with pytest.raises(AlphaAnalyzerError, match="feature_bundle.cycle_id"):
+        analyzer.analyze("ENT_A", mismatched)
+
+    assert port.calls == []
+
+
+def test_single_prompt_analyzer_rejects_world_state_cycle_mismatch(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    port = RecordingReasonerPort()
+    analyzer = SinglePromptAnalyzer(port)
+    mismatched_world = analysis_context.world_state.model_copy(
+        update={"cycle_id": "cycle_other"},
+    )
+    mismatched = analysis_context.model_copy(update={"world_state": mismatched_world})
+
+    with pytest.raises(AlphaAnalyzerError, match="world_state.cycle_id"):
+        analyzer.analyze("ENT_A", mismatched)
+
+    assert port.calls == []
+
+
+def test_single_prompt_analyzer_rejects_feature_bundle_entity_mismatch(
+    analysis_context: AlphaAnalysisContext,
+) -> None:
+    port = RecordingReasonerPort()
+    analyzer = SinglePromptAnalyzer(port)
+    mismatched_bundle = analysis_context.feature_bundle.model_copy(
+        update={"entity_id": "ENT_OTHER"},
+    )
+    mismatched = analysis_context.model_copy(update={"feature_bundle": mismatched_bundle})
+
+    with pytest.raises(AlphaAnalyzerError, match="feature_bundle.entity_id"):
+        analyzer.analyze("ENT_A", mismatched)
+
+    assert port.calls == []

@@ -91,6 +91,14 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
         FORMAL_REPORT_KEY: SINGLE_OBJECT_COUNT,
     }
     assert bundle_payload["audit_payload"]["inconclusive_count"] == SINGLE_OBJECT_COUNT
+    assert (
+        bundle_payload["audit_payload"]["alpha_inconclusive_count"]
+        == SINGLE_OBJECT_COUNT
+    )
+    assert (
+        bundle_payload["audit_payload"]["recommendation_inconclusive_count"]
+        == SINGLE_OBJECT_COUNT
+    )
     assert bundle_payload["audit_payload"]["override_applied_count"] == SINGLE_OBJECT_COUNT
     assert bundle_payload["retrospective_seed"]["selected_entity_ids"] == [
         "ENT_A",

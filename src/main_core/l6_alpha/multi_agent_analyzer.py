@@ -9,11 +9,10 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from main_core.common.contexts import AlphaAnalysisContext
-from main_core.common.errors import InconclusiveError, MainCoreError
+from main_core.common.errors import AlphaAnalyzerError, InconclusiveError, MainCoreError
 from main_core.common.protocols import AnalyzerBase
 from main_core.common.schemas import AlphaResultSnapshot
 from main_core.common.types import EntityId
-from main_core.l6_alpha.single_prompt_analyzer import AlphaAnalyzerError
 
 DEFAULT_MULTI_AGENT_ROLES: tuple[str, ...] = ("fundamental", "technical", "risk")
 

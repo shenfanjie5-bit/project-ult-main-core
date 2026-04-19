@@ -109,6 +109,40 @@ def test_build_dashboard_snapshot_allows_empty_recommendation_list() -> None:
     }
 
 
+def test_build_dashboard_snapshot_rejects_stale_world_state_ref() -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].__setitem__(
+            "ref",
+            "world_state_snapshot/cycle_other/ref",
+        )
+    )
+
+    with pytest.raises(ManifestPublishError, match="cycle_id"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "world_state_snapshot/cycle_other/cycle_l8/ref",
+        "cycle_l8/world_state_snapshot/ref",
+        "world_state_snapshot/ref/cycle_l8",
+    ],
+)
+def test_build_dashboard_snapshot_rejects_misordered_world_state_ref(
+    ref: str,
+) -> None:
+    bundle = _mutated_bundle(
+        lambda payload: payload["formal_objects"][WORLD_STATE_SNAPSHOT_KEY].__setitem__(
+            "ref",
+            ref,
+        )
+    )
+
+    with pytest.raises(ManifestPublishError, match="canonical"):
+        build_dashboard_snapshot("cycle_l8", bundle)
+
+
 def _base_bundle(source: FakeFormalObjectSource | None = None) -> PublishBundle:
     return prepare_publish_bundle(
         "cycle_l8",

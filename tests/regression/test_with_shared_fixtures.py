@@ -208,7 +208,7 @@ class TestRuntimeFixtureDrivenL5PoolSelection:
         """Business-expectation regression (codex stage-2.3 review #2 fix).
 
         For ``minimal_cycle/case_001_one_stock_one_cycle`` the fixture
-        carries exactly 1 candidate (CATL / ENT_STOCK_300750_SZ). The
+        carries exactly 1 candidate (CATL / ENT_STOCK_300750.SZ). The
         L5 service contract says: with no previous_pool, no frozen
         entities, and capacity=100, every eligible candidate is
         selected. The expected business outcome is therefore:

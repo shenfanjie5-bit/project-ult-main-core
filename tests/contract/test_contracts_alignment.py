@@ -62,8 +62,8 @@ def _build_official_alpha_pool_runtime():
         cycle_id="CYC_2025_01_03_DAILY",
         observation_pool_size=1,
         official_alpha_pool_capacity=100,
-        selected_entities=["ENT_STOCK_300750_SZ"],
-        added_entities=["ENT_STOCK_300750_SZ"],
+        selected_entities=["ENT_STOCK_300750.SZ"],
+        added_entities=["ENT_STOCK_300750.SZ"],
         removed_entities=[],
         freeze_reason_map={},
     )
@@ -74,7 +74,7 @@ def _build_alpha_result_snapshot_runtime():
 
     return AlphaResultSnapshot(
         cycle_id="CYC_2025_01_03_DAILY",
-        entity_id="ENT_STOCK_300750_SZ",
+        entity_id="ENT_STOCK_300750.SZ",
         # P2 freeze: must default to / accept "single_prompt_v1"
         # (CLAUDE.md §16.3); set explicitly so a future schema change
         # that drops or renames the field is caught here.
@@ -92,7 +92,7 @@ def _build_recommendation_snapshot_runtime():
 
     return RecommendationSnapshot(
         cycle_id="CYC_2025_01_03_DAILY",
-        entity_id="ENT_STOCK_300750_SZ",
+        entity_id="ENT_STOCK_300750.SZ",
         action_type="buy",
         rating="A",
         confidence=0.88,
@@ -139,7 +139,7 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
         )
         assert envelope.object_name == FormalObjectName.OFFICIAL_ALPHA_POOL
         assert envelope.payload["official_alpha_pool_capacity"] == 100
-        assert envelope.payload["selected_entities"] == ["ENT_STOCK_300750_SZ"]
+        assert envelope.payload["selected_entities"] == ["ENT_STOCK_300750.SZ"]
 
     def test_alpha_result_snapshot_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
@@ -161,7 +161,7 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
         # entity_id (recommendation cross-ref).
         assert envelope.payload["analyzer_type"] == "single_prompt_v1"
         assert envelope.payload["status"] == "ok"
-        assert envelope.payload["entity_id"] == "ENT_STOCK_300750_SZ"
+        assert envelope.payload["entity_id"] == "ENT_STOCK_300750.SZ"
 
     def test_recommendation_snapshot_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
@@ -181,7 +181,7 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
         # CLAUDE.md §9 invariant: entity_id must round-trip — it is
         # cross-checked against OfficialAlphaPool.selected_entities at
         # publish time, so drift here breaks that downstream check.
-        assert envelope.payload["entity_id"] == "ENT_STOCK_300750_SZ"
+        assert envelope.payload["entity_id"] == "ENT_STOCK_300750.SZ"
         assert envelope.payload["action_type"] == "buy"
         # override_applied is a publish-gate signal (CLAUDE.md §12.3:
         # override-vs-Gate semantics). Must round-trip as a real boolean,

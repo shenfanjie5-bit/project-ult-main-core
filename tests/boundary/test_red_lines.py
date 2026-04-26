@@ -21,7 +21,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── #1 L4 共享状态层边界 ─────────────────────────────────────────
 
 
@@ -108,6 +107,7 @@ class TestWorldStateLLMDeltaRange:
         self, bad_delta: int
     ) -> None:
         from pydantic import ValidationError
+
         from main_core.common.schemas.world_state import WorldStateSnapshot
 
         payload = self._baseline_valid_payload()

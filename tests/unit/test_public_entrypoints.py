@@ -35,7 +35,7 @@ class TestHealthProbeDictShape:
 class TestSmokeHookDictShape:
     def test_required_fields_present(self) -> None:
         result = public.smoke_hook.run(profile_id="lite-local")
-        assert set(result.keys()) >= {
+        assert set(result.keys()) == {
             "module_id",
             "hook_name",
             "passed",
@@ -48,10 +48,11 @@ class TestSmokeHookDictShape:
             result = public.smoke_hook.run(profile_id=profile_id)
             assert result["passed"], (profile_id, result.get("failure_reason"))
 
-    def test_smoke_covers_four_formal_models(self) -> None:
+    def test_smoke_result_has_no_assembly_forbidden_extra_fields(self) -> None:
         result = public.smoke_hook.run(profile_id="lite-local")
         assert result["passed"]
-        assert result["details"]["formal_models_checked"] == 4
+        assert "details" not in result
+        assert "profile_id" not in result
 
 
 class TestVersionDeclarationShape:

@@ -42,7 +42,7 @@ _MODULE_VERSION = _MODULE_VERSION_RAW if isinstance(_MODULE_VERSION_RAW, str) el
 # matrix.contract_version) succeeds at the cross-project compat audit
 # (assembly/scripts/stage_3_compat_audit.py + Stage 4 §4.1 registry).
 _CONTRACT_VERSION = "v0.1.3"
-_COMPATIBLE_CONTRACT_RANGE = ">=0.1.0,<0.2.0"
+_COMPATIBLE_CONTRACT_RANGE = ">=0.1.3,<0.2.0"
 
 
 class _HealthProbe:
@@ -106,7 +106,6 @@ class _SmokeHook:
             from main_core.common.schemas.alpha import AlphaResultSnapshot
             from main_core.common.schemas.recommendation import RecommendationSnapshot
 
-            checked = 0
             for model in (
                 WorldStateSnapshot,
                 OfficialAlphaPool,
@@ -114,7 +113,6 @@ class _SmokeHook:
                 RecommendationSnapshot,
             ):
                 assert model.model_fields, f"{model.__name__} has no fields"
-                checked += 1
 
             duration_ms = (time.monotonic() - start) * 1000.0
             return {
@@ -123,10 +121,6 @@ class _SmokeHook:
                 "passed": True,
                 "duration_ms": duration_ms,
                 "failure_reason": None,
-                "details": {
-                    "profile_id": profile_id,
-                    "formal_models_checked": checked,
-                },
             }
         except Exception as exc:
             duration_ms = (time.monotonic() - start) * 1000.0
@@ -136,7 +130,6 @@ class _SmokeHook:
                 "passed": False,
                 "duration_ms": duration_ms,
                 "failure_reason": f"main-core smoke failed: {exc!s}",
-                "details": {"profile_id": profile_id},
             }
 
 
@@ -151,7 +144,6 @@ class _InitHook:
 
     def initialize(self, *, resolved_env: dict[str, str]) -> None:
         _ = resolved_env  # explicit unused-binding to silence linters
-        return None
 
 
 class _VersionDeclaration:

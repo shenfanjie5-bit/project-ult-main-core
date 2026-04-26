@@ -119,7 +119,7 @@ def test_prepare_publish_bundle_returns_canonical_formal_object_entries() -> Non
     ] == "dashboard_snapshot-snapshot"
     assert bundle_payload["manifest_candidate"]["table_snapshots"][
         FORMAL_REPORT_KEY
-    ] == "formal_report-snapshot"
+    ] == "report-snapshot"
 
 
 @pytest.mark.parametrize(

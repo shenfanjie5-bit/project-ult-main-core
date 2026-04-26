@@ -20,6 +20,7 @@ from main_core.l8_publish.refs import (
 DASHBOARD_SNAPSHOT_KEY = "dashboard_snapshot"
 
 _ACTION_TYPES = ("buy", "hold", "reduce", "inconclusive")
+_REF_SEGMENT_COUNT = 3
 _MISSING = object()
 
 
@@ -222,7 +223,7 @@ def _ensure_ref_belongs_to_cycle(
     expected_cycle = str(cycle_id)
     segments = ref.split("/")
     if (
-        len(segments) != 3
+        len(segments) != _REF_SEGMENT_COUNT
         or segments[0] != object_key
         or segments[1] != expected_cycle
         or not segments[2]

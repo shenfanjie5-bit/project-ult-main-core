@@ -18,7 +18,7 @@ from main_core.l8_publish.dashboard import (
     build_dashboard_snapshot,
 )
 
-FORMAL_REPORT_KEY = "formal_report"
+FORMAL_REPORT_KEY = "report"
 
 
 def build_formal_report(

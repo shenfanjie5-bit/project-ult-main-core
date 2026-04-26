@@ -106,6 +106,8 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
     def test_world_state_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
             FormalObjectName,
+        )
+        from contracts.schemas.formal_objects import (
             WorldStateSnapshot as ContractWorldStateSnapshot,
         )
 
@@ -126,6 +128,8 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
     def test_official_alpha_pool_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
             FormalObjectName,
+        )
+        from contracts.schemas.formal_objects import (
             OfficialAlphaPool as ContractOfficialAlphaPool,
         )
 
@@ -143,8 +147,14 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
 
     def test_alpha_result_snapshot_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
-            FormalObjectName,
             AlphaResultSnapshot as ContractAlphaResultSnapshot,
+        )
+        from contracts.schemas.formal_objects import (
+            FormalObjectName,
+        )
+
+        from main_core.common.schemas.alpha import (
+            AlphaResultSnapshot as RuntimeAlphaResultSnapshot,
         )
 
         runtime_model = _build_alpha_result_snapshot_runtime()
@@ -162,11 +172,18 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
         assert envelope.payload["analyzer_type"] == "single_prompt_v1"
         assert envelope.payload["status"] == "ok"
         assert envelope.payload["entity_id"] == "ENT_STOCK_300750.SZ"
+        assert RuntimeAlphaResultSnapshot.model_validate(envelope.payload) == runtime_model
 
     def test_recommendation_snapshot_runtime_dumps_into_contract_envelope(self) -> None:
         from contracts.schemas.formal_objects import (
             FormalObjectName,
+        )
+        from contracts.schemas.formal_objects import (
             RecommendationSnapshot as ContractRecommendationSnapshot,
+        )
+
+        from main_core.common.schemas.recommendation import (
+            RecommendationSnapshot as RuntimeRecommendationSnapshot,
         )
 
         runtime_model = _build_recommendation_snapshot_runtime()
@@ -187,6 +204,7 @@ class TestRuntimeModelDumpsRoundTripIntoContractEnvelope:
         # override-vs-Gate semantics). Must round-trip as a real boolean,
         # not collapse to truthy/falsy.
         assert envelope.payload["override_applied"] is False
+        assert RuntimeRecommendationSnapshot.model_validate(envelope.payload) == runtime_model
 
 
 class TestFormalObjectNameEnumCoverage:
@@ -204,8 +222,26 @@ class TestFormalObjectNameEnumCoverage:
             "official_alpha_pool",
             "alpha_result_snapshot",
             "recommendation_snapshot",
+            "report",
         ):
             assert required in canonical, (
                 f"contracts.FormalObjectName missing {required!r}; "
                 f"main-core would have nowhere to declare object_name"
             )
+
+    def test_l8_report_publish_key_matches_contracts_canonical_name(self) -> None:
+        from contracts.schemas.formal_objects import FormalObjectName
+
+        from main_core.l8_publish import prepare_publish_bundle
+        from main_core.l8_publish.report import FORMAL_REPORT_KEY
+        from tests.l8_publish import FakeFormalObjectSource, RecordingPublishPort
+
+        bundle = prepare_publish_bundle(
+            "cycle_l8",
+            source=FakeFormalObjectSource(),
+            publish_port=RecordingPublishPort(),
+        )
+
+        assert FORMAL_REPORT_KEY == FormalObjectName.REPORT.value
+        assert FORMAL_REPORT_KEY in bundle.formal_objects
+        assert "formal_report" not in bundle.formal_objects

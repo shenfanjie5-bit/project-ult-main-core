@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import Any
 
 import pytest
 
@@ -21,7 +20,6 @@ from main_core.l4_world_state.reasoner_port import (
 )
 from main_core.l5_universe import select_official_alpha_pool
 from main_core.l7_recommendation import generate_recommendations
-
 
 contracts = pytest.importorskip("contracts")
 reasoner_runtime = pytest.importorskip("reasoner_runtime")
@@ -40,12 +38,11 @@ from contracts.schemas.cycle import CycleMetadata, CyclePhase  # noqa: E402
 from contracts.schemas.entities import EntityReference  # noqa: E402
 from contracts.schemas.graph import GraphEdge, GraphNode  # noqa: E402
 
-
 CYCLE_ID = CycleId("CYCLE_20260427_VERTICAL")
 ENTITY_ID = EntityId("ENT_STOCK_600519.SH")
 SECTOR_ID = "SECTOR_BAIJIU"
-EVENT_NODE_ID = "ENT_EVENT_tushare_notice_5b6f6d42"
-EVIDENCE_REF = "evidence:tushare-notice:20260427:600519"
+EVENT_NODE_ID = "ENT_EVENT_earnings_notice_5b6f6d42"
+EVIDENCE_REF = "evidence:earnings-notice:20260427:600519"
 SNAPSHOT_ID = "graph-impact-CYCLE_20260427_VERTICAL-001"
 NOW = datetime(2026, 4, 27, 9, 30, tzinfo=UTC)
 

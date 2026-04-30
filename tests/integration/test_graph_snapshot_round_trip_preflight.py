@@ -4,7 +4,8 @@ Bounded preflight that closes the M3.2 gate criterion ("P2 consumes an
 actual produced graph snapshot ref in a bounded run, not a fixture-only
 fake"). Wires the **real** graph-engine snapshot writer + reader and a
 small adapter port through main-core's L3 / L4 consumers; proves the
-cycle_id and the snapshot's payload round-trip end-to-end.
+cycle_id plus GraphSnapshot-derived node/edge payload round-trip
+end-to-end.
 
 Scope boundaries deliberately observed:
 
@@ -15,9 +16,14 @@ Scope boundaries deliberately observed:
 * No production ``GraphEnginePort`` impl (none exists yet); the test
   introduces an ``_ArtifactBackedGraphEnginePort`` that internally
   reads the artifact via ``ArtifactCanonicalReader`` and converts the
-  contracts-shape GraphSnapshot into the main-core
+  contracts-shape GraphSnapshot-derived cold-reload plan into the main-core
   ``GraphImpactRecord`` / ``GraphRegimeContext`` shapes the L3 / L4
   adapters expect. The adapter is local to this test.
+* The writer stores the companion ``GraphImpactSnapshot`` in the
+  formal artifact, but the public ``ArtifactCanonicalReader`` path used
+  here exposes only the GraphSnapshot-derived cold-reload plan. Formal
+  GraphImpactSnapshot consumption remains future production-adapter
+  work.
 * graph-engine is imported as a sibling repo. main-core's `.venv` does
   not pre-install ``graph_engine``; the test prepends the sibling
   source path lazily so the import works from the standard
@@ -150,12 +156,14 @@ class _ArtifactBackedGraphEnginePort:
     snapshot artifact written by ``FormalArtifactSnapshotWriter``.
 
     **Scope:** test fixture only. The adapter's
-    ``read_graph_impact_snapshot`` projects from ``plan.node_records``
-    only; it deliberately does **not** project from
+    ``read_graph_impact_snapshot`` projects main-core protocol records
+    from ``plan.node_records`` only; it deliberately does **not**
+    consume the formal ``GraphImpactSnapshot`` payload or project from
     ``plan.edge_records``. A production adapter would need to extend
-    this to surface edge-derived impact (e.g. SUPPLY_CHAIN contagion).
-    Treat this class as a fixture for round-trip semantics, **not** a
-    production-adapter starting point.
+    this to consume formal impact snapshots once a public reader path
+    exists and to surface edge-derived impact (e.g. SUPPLY_CHAIN
+    contagion). Treat this class as a fixture for round-trip semantics,
+    **not** a production-adapter starting point.
 
     **`snapshot_ref` constraint:** the round-trip preflight tests pass
     an absolute filesystem path produced by
@@ -204,9 +212,10 @@ class _ArtifactBackedGraphEnginePort:
     ) -> Sequence[GraphImpactRecord]:
         self.impact_calls.append(cycle_id)
         # Project the cold-reload plan's node records into one
-        # ``GraphImpactRecord`` per node carrying a canonical entity id.
-        # **Test-only projection — production adapters MUST also surface
-        # edge-derived impact** (this fixture intentionally skips edges).
+        # main-core protocol ``GraphImpactRecord`` per node carrying a
+        # canonical entity id. **Test-only projection — production
+        # adapters MUST consume formal impact snapshots and also surface
+        # edge-derived impact** (this fixture intentionally skips both).
         #
         # The ``round_trip_marker`` and ``node_id_in_payload`` fields
         # are read from the node's payload properties (decoded from
@@ -268,14 +277,16 @@ class _ArtifactBackedGraphEnginePort:
 
 # ---------------------------------------------------------------------------
 # Snapshot fixture builder: constructs a contracts-conformant
-# GraphSnapshot + GraphImpactSnapshot small enough to verify by hand.
+# GraphSnapshot plus companion GraphImpactSnapshot small enough to verify by hand.
 # ---------------------------------------------------------------------------
 
 
 def _build_graph_snapshot_pair(cycle_id: str) -> tuple[Any, Any]:
     """Build a ``(GraphSnapshot, GraphImpactSnapshot)`` pair conforming
     to the contracts schemas. Returns the contracts-domain Pydantic
-    models that ``FormalArtifactSnapshotWriter`` accepts."""
+    models that ``FormalArtifactSnapshotWriter`` accepts. The M3.2
+    consumer path below reads the GraphSnapshot-derived cold-reload
+    plan; it does not consume the formal impact snapshot."""
 
     _ensure_graph_engine_on_path()
     from contracts.core.types import Direction
@@ -413,10 +424,12 @@ def test_graph_snapshot_artifact_round_trips_via_writer_and_reader(
 ) -> None:
     """Phase 1 of the preflight: graph-engine's
     ``FormalArtifactSnapshotWriter`` writes a real ``GraphSnapshot`` +
-    ``GraphImpactSnapshot`` pair to disk; ``ArtifactCanonicalReader``
+    companion ``GraphImpactSnapshot`` pair to disk; ``ArtifactCanonicalReader``
     reads back a ``ColdReloadPlan`` whose ``expected_snapshot`` matches
-    the original snapshot's identity fields. This is the boundary
-    contract M3.2 hinges on: the write/read shapes agree."""
+    the original GraphSnapshot identity fields. This is the boundary
+    contract M3.2 hinges on: the GraphSnapshot write/read shapes agree.
+    The public reader does not expose formal GraphImpactSnapshot
+    consumption."""
 
     _ensure_graph_engine_on_path()
     from graph_engine.reload import ArtifactCanonicalReader
@@ -447,15 +460,16 @@ def test_graph_snapshot_artifact_round_trips_via_writer_and_reader(
     assert len(plan.edge_records) == graph_snapshot.edge_count
 
 
-def test_main_core_l3_consumes_artifact_backed_graph_impact_records(
+def test_main_core_l3_consumes_artifact_backed_graph_snapshot_node_payload(
     tmp_path: Path,
 ) -> None:
     """Phase 2 of the preflight: the artifact-backed
-    ``GraphEnginePort`` adapter sources records from the round-tripped
-    snapshot; main-core's ``build_feature_signal_bundles`` (L3)
-    consumes them and stamps the snapshot's identifier into the
-    feature bundle. This proves the L3 consumer reads from a real
-    produced snapshot, not a hard-coded fixture."""
+    ``GraphEnginePort`` adapter projects main-core protocol records
+    from the round-tripped GraphSnapshot node payload; main-core's
+    ``build_feature_signal_bundles`` (L3) consumes them and stamps the
+    snapshot's identifier into the feature bundle. This proves the L3
+    consumer reads from a real produced GraphSnapshot, not a hard-coded
+    fixture. It does not prove formal GraphImpactSnapshot consumption."""
 
     _ensure_graph_engine_on_path()
     from graph_engine.snapshots import FormalArtifactSnapshotWriter
@@ -510,7 +524,7 @@ def test_main_core_l3_consumes_artifact_backed_graph_impact_records(
     assert bundle_features["round_trip_marker"] == "from-artifact-payload"
     # The per-node id-in-payload field came through the payload too.
     assert bundle_features["node_id_in_payload"] == "NODE_001"
-    # L3 called the impact path exactly once with the requested cycle id.
+    # L3 called the protocol impact path exactly once with the requested cycle id.
     assert graph_port.impact_calls == [cycle_id]
 
 
@@ -521,7 +535,8 @@ def test_main_core_l4_consumes_artifact_backed_graph_regime_context(
     serves the ``read_graph_regime_context`` path; main-core's
     ``derive_world_state`` (L4) consumes it and stamps the snapshot's
     identifier + node/edge counts into the world-state inputs. Proves
-    the L4 consumer also reads from the real produced snapshot."""
+    the L4 consumer also reads from the real produced GraphSnapshot.
+    It does not prove formal GraphImpactSnapshot consumption."""
 
     _ensure_graph_engine_on_path()
     from graph_engine.snapshots import FormalArtifactSnapshotWriter

@@ -194,9 +194,8 @@ def test_previous_world_state_feeds_readonly_graph_context_into_l3_and_l4() -> N
 # integration suite was missing is end-to-end coverage that the
 # fail-closed rejection survives the higher-level
 # ``build_feature_signal_bundles`` (L3) and ``derive_world_state`` (L4)
-# call paths — i.e. that the production daily-cycle path will halt at
-# the first cycle-id mismatch instead of silently consuming the
-# drifted graph artifact.
+# call paths — i.e. these consumers stop at the first cycle-id mismatch
+# instead of silently consuming the drifted graph artifact.
 # ---------------------------------------------------------------------------
 
 
@@ -360,10 +359,9 @@ def test_l4_derive_world_state_fails_closed_on_cross_cycle_graph_regime() -> Non
     assert policy.seen_inputs == []
 
 
-def test_cross_cycle_rejection_halts_before_world_state_is_emitted() -> None:
-    """Belt-and-braces end-to-end: a cycle whose L3 graph artifact is
-    drifted MUST NOT produce a ``WorldStateSnapshot`` for the current
-    cycle. The rejection halts the chain at the first encounter."""
+def test_cross_cycle_rejection_stops_before_l4_graph_read() -> None:
+    """Belt-and-braces integration path: a cycle whose L3 graph artifact
+    is drifted raises before the L4 graph regime read is reached."""
 
     current_cycle_id = CycleId("cycle-current")
     drift_cycle_id = CycleId("cycle-from-last-month")
@@ -391,8 +389,8 @@ def test_cross_cycle_rejection_halts_before_world_state_is_emitted() -> None:
     # is "where in the call stack did the halt happen", not just
     # "did it halt" (codex/code-reviewer M3.1.r1 P2 fold-in).
     assert drift_port.impact_calls == [current_cycle_id]
-    # No world-state snapshot should ever be emitted from this drift
-    # scenario; the chain halts at L3. Pinning by checking that the L4
-    # graph regime read was never even attempted (because L3 raised
-    # before the L4 wiring was reached).
+    # This is not a wrapper-level world-state emission proof; it pins
+    # the integration-layer ordering by checking that the L4 graph
+    # regime read was never even attempted because L3 raised before
+    # the L4 wiring was reached.
     assert drift_port.regime_calls == []

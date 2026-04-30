@@ -31,6 +31,7 @@ are touched.
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -57,16 +58,37 @@ from main_core.l4_world_state.reasoner_port import WorldStateDeltaDecision
 
 
 def _ensure_graph_engine_on_path() -> None:
+    """Resolve the sibling ``graph-engine`` repo and append its root to
+    ``sys.path``. The preflight is a **gate** — missing graph-engine
+    must hard-fail rather than silently skip, so that a CI lane that
+    forgets to check out the sibling repo cannot pass the M3.2
+    preflight by accident (codex review-fold-1 P2: skip-as-pass would
+    weaken the gate). Set ``ULT_M3_2_ALLOW_SKIP_MISSING_GRAPH_ENGINE=1``
+    to opt out for purely-local development checkouts that intentionally
+    omit the sibling."""
+
     here = Path(__file__).resolve()
     workspace = here.parents[3]  # .../project-ult
     graph_engine_root = workspace / "graph-engine"
     if not graph_engine_root.is_dir():
-        pytest.skip(
+        import os
+
+        if os.environ.get("ULT_M3_2_ALLOW_SKIP_MISSING_GRAPH_ENGINE") == "1":
+            pytest.skip(
+                f"graph-engine sibling repo not found at {graph_engine_root}; "
+                "skipping cross-module preflight (env opt-out enabled)"
+            )
+        raise RuntimeError(
             f"graph-engine sibling repo not found at {graph_engine_root}; "
-            "skipping cross-module preflight"
+            "the M3.2 preflight requires graph-engine on disk. Either "
+            "check out graph-engine alongside main-core in the workspace "
+            "or set ULT_M3_2_ALLOW_SKIP_MISSING_GRAPH_ENGINE=1 to opt out."
         )
     if str(graph_engine_root) not in sys.path:
-        sys.path.insert(0, str(graph_engine_root))
+        # Append rather than insert(0) so the sibling repo cannot
+        # shadow stdlib / installed packages with conflicting names.
+        # (review-fold-1 P2: code-reviewer D1.)
+        sys.path.append(str(graph_engine_root))
 
 # ---------------------------------------------------------------------------
 # Fakes for non-graph dependencies (data-platform, world-state policy).
@@ -106,7 +128,12 @@ class _SimpleWorldStatePolicy:
 
     def compose(self, baseline: str, delta: int) -> str:
         regimes = ("risk_off", "neutral", "risk_on")
-        return regimes[regimes.index(baseline) + delta]
+        new_index = regimes.index(baseline) + delta
+        # Clamp to a valid index so the policy is safe to reuse with
+        # a non-zero delta on a regime at either edge of the spectrum.
+        # (review-fold-1 minor: python-reviewer.)
+        new_index = max(0, min(len(regimes) - 1, new_index))
+        return regimes[new_index]
 
 
 # ---------------------------------------------------------------------------
@@ -119,18 +146,44 @@ class _SimpleWorldStatePolicy:
 
 @dataclass
 class _ArtifactBackedGraphEnginePort:
-    """``GraphEnginePort`` impl that sources records from a graph-engine
+    """Test-only ``GraphEnginePort`` impl reading from a graph-engine
     snapshot artifact written by ``FormalArtifactSnapshotWriter``.
 
-    The artifact is read via ``ArtifactCanonicalReader.read_cold_reload_plan``
-    once on construction; subsequent reads on the port are O(1) over
-    the cached snapshot.
+    **Scope:** test fixture only. The adapter's
+    ``read_graph_impact_snapshot`` projects from ``plan.node_records``
+    only; it deliberately does **not** project from
+    ``plan.edge_records``. A production adapter would need to extend
+    this to surface edge-derived impact (e.g. SUPPLY_CHAIN contagion).
+    Treat this class as a fixture for round-trip semantics, **not** a
+    production-adapter starting point.
+
+    **`snapshot_ref` constraint:** the round-trip preflight tests pass
+    an absolute filesystem path produced by
+    ``FormalArtifactSnapshotWriter.last_artifact_ref``. Passing an
+    ``artifact://...`` URI would require ``artifact_root`` be set; the
+    current preflight does not exercise that path and the adapter does
+    not assert the constraint at construction time. (review-fold-1
+    P1: documented rather than rejected because the test caller never
+    deviates from the absolute-path convention.)
+
+    Reading via ``ArtifactCanonicalReader.read_cold_reload_plan`` is
+    done once on construction; subsequent reads on the port are O(1)
+    over the cached plan.
     """
 
     snapshot_ref: str
     artifact_root: Path | None = None
     impact_calls: list[CycleId] = field(default_factory=list)
     regime_calls: list[CycleId] = field(default_factory=list)
+    # Internal post-init state. Declared with ``field(init=False)`` so
+    # the dataclass contract acknowledges them — ``replace()``,
+    # ``__repr__``, and ``__eq__`` skip these explicitly. Types are
+    # ``Any`` because the concrete graph-engine types are imported
+    # lazily and cannot be statically referenced at class-definition
+    # time. (review-fold-1 P1: python-reviewer.)
+    _cached_plan: Any = field(init=False, repr=False, default=None)
+    _cached_snapshot: Any = field(init=False, repr=False, default=None)
+    _cached_node_records: Any = field(init=False, repr=False, default=None)
 
     def __post_init__(self) -> None:
         _ensure_graph_engine_on_path()
@@ -152,14 +205,22 @@ class _ArtifactBackedGraphEnginePort:
         self.impact_calls.append(cycle_id)
         # Project the cold-reload plan's node records into one
         # ``GraphImpactRecord`` per node carrying a canonical entity id.
-        # Mirrors the production contract that L3 only consumes records
-        # tied to known canonical entities.
+        # **Test-only projection — production adapters MUST also surface
+        # edge-derived impact** (this fixture intentionally skips edges).
+        #
+        # The ``round_trip_marker`` and ``node_id_in_payload`` fields
+        # are read from the node's payload properties (decoded from
+        # ``properties_json`` by the cold-reload reader), NOT
+        # synthesized by this adapter. That makes their presence in
+        # the L3 feature bundle a witness that the artifact's payload
+        # round-tripped through the reader (codex review-fold-1 P2).
         snapshot = self._cached_snapshot
         records: list[GraphImpactRecord] = []
         for node_record in self._cached_node_records:
             entity_id_value = getattr(node_record, "canonical_entity_id", None)
             if not entity_id_value:
                 continue
+            payload_properties = getattr(node_record, "properties", {}) or {}
             records.append(
                 GraphImpactRecord(
                     cycle_id=CycleId(snapshot.cycle_id),
@@ -167,7 +228,14 @@ class _ArtifactBackedGraphEnginePort:
                     snapshot_id=snapshot.snapshot_id,
                     features={
                         "node_label": node_record.label,
-                        "round_trip_marker": "from-artifact-reader",
+                        # Read from payload (proves the round-trip)
+                        # rather than hardcoded by the adapter.
+                        "round_trip_marker": payload_properties.get(
+                            "round_trip_marker"
+                        ),
+                        "node_id_in_payload": payload_properties.get(
+                            "node_id_in_payload"
+                        ),
                     },
                 )
             )
@@ -178,13 +246,22 @@ class _ArtifactBackedGraphEnginePort:
     ) -> GraphRegimeContext | None:
         self.regime_calls.append(cycle_id)
         snapshot = self._cached_snapshot
+        # Aggregate the marker witnesses from the node records so the
+        # L4 regime context also surfaces a payload-round-trip proof.
+        markers: set[str] = set()
+        for node_record in self._cached_node_records:
+            payload_properties = getattr(node_record, "properties", {}) or {}
+            marker = payload_properties.get("round_trip_marker")
+            if isinstance(marker, str):
+                markers.add(marker)
         return GraphRegimeContext(
             cycle_id=CycleId(snapshot.cycle_id),
             snapshot_id=snapshot.snapshot_id,
             regime_context={
                 "node_count": snapshot.node_count,
                 "edge_count": snapshot.edge_count,
-                "round_trip_marker": "from-artifact-reader",
+                # Sorted list so the assertion is deterministic.
+                "round_trip_markers_from_payload": sorted(markers),
             },
         )
 
@@ -232,11 +309,24 @@ def _build_graph_snapshot_pair(cycle_id: str) -> tuple[Any, Any]:
     iso_now = "2026-04-30T12:00:00+00:00"
 
     def _node_props(node_id: str, label: str, entity_id: str) -> dict[str, Any]:
+        # ``round_trip_marker`` lives **inside** ``properties_json`` so
+        # it round-trips through the reader's ``_canonical_properties``
+        # decoding pass. The artifact-backed port reads this marker
+        # back from the cold-reload plan rather than synthesizing it,
+        # making it a true payload-round-trip witness
+        # (codex review-fold-1 P2: marker must come from the artifact,
+        # not from the adapter itself).
         return {
             "node_id": node_id,
             "label": label,
             "canonical_entity_id": entity_id,
-            "properties_json": "{}",
+            "properties_json": json.dumps(
+                {
+                    "round_trip_marker": "from-artifact-payload",
+                    "node_id_in_payload": node_id,
+                },
+                sort_keys=True,
+            ),
             "created_at": iso_now,
             "updated_at": iso_now,
         }
@@ -246,15 +336,13 @@ def _build_graph_snapshot_pair(cycle_id: str) -> tuple[Any, Any]:
         # cold-reload reader decodes back into the GraphEdgeRecord's
         # ``properties`` dict. Evidence refs must live inside that JSON
         # blob (NOT alongside ``properties_json`` as a sibling key) so
-        # the reader's `_canonical_properties` returns them.
-        import json as _json
-
+        # the reader's ``_canonical_properties`` returns them.
         return {
             "edge_id": edge_id,
             "source_node_id": src,
             "target_node_id": tgt,
             "relationship_type": rel,
-            "properties_json": _json.dumps(
+            "properties_json": json.dumps(
                 {"evidence_refs": ["evidence://test/round-trip-001"]},
                 sort_keys=True,
             ),
@@ -413,12 +501,15 @@ def test_main_core_l3_consumes_artifact_backed_graph_impact_records(
     # graph_snapshot_id — proving L3 consumed the **real** ref, not a
     # synthetic value the test conjured outside the snapshot lifecycle.
     assert bundle.graph_features["snapshot_id"] == graph_snapshot.graph_snapshot_id
-    # And the round-trip marker proves the records came through the
-    # artifact reader, not a bypassed in-memory shortcut.
-    assert (
-        bundle.graph_features["features"]["round_trip_marker"]
-        == "from-artifact-reader"
-    )
+    # The marker comes from the snapshot's payload (embedded in
+    # properties_json by the fixture builder, decoded by the reader,
+    # surfaced by the adapter). Reading "from-artifact-payload" here
+    # proves the **payload** round-tripped through writer→reader, not
+    # just the IDs/counts (codex review-fold-1 P2).
+    bundle_features = bundle.graph_features["features"]
+    assert bundle_features["round_trip_marker"] == "from-artifact-payload"
+    # The per-node id-in-payload field came through the payload too.
+    assert bundle_features["node_id_in_payload"] == "NODE_001"
     # L3 called the impact path exactly once with the requested cycle id.
     assert graph_port.impact_calls == [cycle_id]
 
@@ -495,19 +586,33 @@ def test_main_core_l4_consumes_artifact_backed_graph_regime_context(
     regime_context = graph_impact["regime_context"]
     assert regime_context["node_count"] == graph_snapshot.node_count
     assert regime_context["edge_count"] == graph_snapshot.edge_count
-    assert regime_context["round_trip_marker"] == "from-artifact-reader"
+    # The markers are aggregated by the adapter from each node's
+    # payload (decoded via the reader's properties_json round-trip);
+    # both nodes embed the same marker so the deduped list has one
+    # entry — proving payload values flow end-to-end (codex
+    # review-fold-1 P2).
+    assert regime_context["round_trip_markers_from_payload"] == [
+        "from-artifact-payload",
+    ]
     # L4 called the regime path exactly once with the requested cycle id.
     assert graph_port.regime_calls == [cycle_id]
 
 
-def test_round_trip_preserves_cycle_id_under_unicode_safe_ref(
+def test_round_trip_preserves_cycle_id_with_long_alphanumeric_ref(
     tmp_path: Path,
 ) -> None:
     """Belt-and-braces: the round-trip preserves ``cycle_id`` for a
-    cycle id that includes non-trivial characters (still
-    spec-compliant per ``CycleId`` validator). Catches a regression
-    where the writer or reader silently coerces / truncates the
-    cycle_id."""
+    long alphanumeric ref that mirrors the production cycle-id
+    convention (``cycle-<task>-<date>T<time>Z`` with hyphens replacing
+    colons in the timestamp). Catches a regression where the writer or
+    reader silently coerces / truncates the cycle_id when the value
+    has more visual structure than the simpler ``cycle-current``
+    examples used by the other three tests.
+
+    The hyphen-as-time-separator is intentional: ``CycleId`` rejects
+    the literal-colon ``T12:00Z`` form (per the validator constraint)
+    and the production filesystem convention also uses hyphens to
+    avoid path-separator clashes on case-insensitive filesystems."""
 
     _ensure_graph_engine_on_path()
     from graph_engine.reload import ArtifactCanonicalReader

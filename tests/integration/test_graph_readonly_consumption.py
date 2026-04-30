@@ -374,14 +374,23 @@ def test_cross_cycle_rejection_halts_before_world_state_is_emitted() -> None:
         drift_regime=True,
     )
 
-    # First failure: L3 should raise.
-    with pytest.raises(GraphSnapshotError):
+    # First failure: L3 should raise. Pin both the exception type AND
+    # the message substring (consistent with the L3 / L4 isolated
+    # tests above) so a regression that changes only the prefix and
+    # keeps the body would still be caught here.
+    with pytest.raises(GraphSnapshotError, match="different cycle"):
         build_feature_signal_bundles(
             current_cycle_id,
             data_port=data_port,
             graph_engine_port=drift_port,
         )
 
+    # L3 must have been called exactly once before the raise (proves
+    # the rejection happens on the FIRST graph read, not after a
+    # silent retry). Pinned alongside ``regime_calls`` so the proof
+    # is "where in the call stack did the halt happen", not just
+    # "did it halt" (codex/code-reviewer M3.1.r1 P2 fold-in).
+    assert drift_port.impact_calls == [current_cycle_id]
     # No world-state snapshot should ever be emitted from this drift
     # scenario; the chain halts at L3. Pinning by checking that the L4
     # graph regime read was never even attempted (because L3 raised

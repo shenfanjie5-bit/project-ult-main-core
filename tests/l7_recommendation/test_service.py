@@ -12,11 +12,13 @@ from main_core.common.contexts import RecommendationConstraintInputs
 from main_core.common.errors import MainCoreError
 from main_core.common.schemas import (
     AlphaResultSnapshot,
+    FeatureSignalBundle,
     OfficialAlphaPool,
     OverrideRecord,
     RecommendationSnapshot,
     WorldStateSnapshot,
 )
+from main_core.l5_universe import select_mvp20_decision_pool
 from main_core.l7_recommendation import (
     InMemoryOverrideStore,
     generate_recommendations,
@@ -90,6 +92,22 @@ def _analysis(
     )
 
 
+def _feature_bundle(
+    entity_id: str,
+    score: float,
+    *,
+    cycle_id: str = "cycle_l7",
+) -> FeatureSignalBundle:
+    return FeatureSignalBundle(
+        cycle_id=cycle_id,
+        entity_id=entity_id,
+        feature_values={"momentum": score},
+        signal_values={"candidate_score": score},
+        graph_features={},
+        feature_weight_multiplier={"momentum": 1.0},
+    )
+
+
 def _override(
     entity_id: str,
     action_type: str,
@@ -128,6 +146,40 @@ def test_generate_recommendations_maps_scores_in_pool_order() -> None:
         "reduce",
     ]
     assert [recommendation.rating for recommendation in recommendations] == ["B", "A", "C"]
+
+
+def test_generate_recommendations_with_mvp20_pool_ignores_related_risk_entities() -> None:
+    manifest_targets = tuple(f"ENT_T{index:02d}" for index in range(1, 21))
+    related_entities = ("ENT_RELATED_A", "ENT_RELATED_B")
+    world_state = _world_state()
+    bundles = [
+        *[
+            _feature_bundle(entity_id, float(index))
+            for index, entity_id in enumerate(manifest_targets)
+        ],
+        _feature_bundle(related_entities[0], 999.0),
+        _feature_bundle(related_entities[1], 998.0),
+    ]
+    pool = select_mvp20_decision_pool(world_state, bundles, manifest_targets)
+    analyses = [
+        _analysis(entity_id, BUY_SCORE_THRESHOLD)
+        for entity_id in manifest_targets
+    ]
+
+    recommendations = generate_recommendations(
+        pool,
+        analyses,
+        world_state,
+        risk_context={"related_entities": related_entities},
+    )
+
+    assert [recommendation.entity_id for recommendation in recommendations] == list(
+        manifest_targets
+    )
+    assert not any(
+        recommendation.entity_id in related_entities
+        for recommendation in recommendations
+    )
 
 
 def test_generate_recommendations_passes_inconclusive_through_explicitly() -> None:

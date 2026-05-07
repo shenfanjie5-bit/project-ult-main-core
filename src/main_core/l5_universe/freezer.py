@@ -29,10 +29,7 @@ def merge_frozen_entities(
         ):
             merged.setdefault(EntityId(str(entity_id)), reason)
 
-    for entity_id, reason in sorted(
-        dict(frozen_entities or {}).items(),
-        key=lambda item: str(item[0]),
-    ):
+    for entity_id, reason in dict(frozen_entities or {}).items():
         merged.setdefault(EntityId(str(entity_id)), reason)
 
     return merged

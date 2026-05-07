@@ -45,9 +45,19 @@ def test_merge_frozen_entities_preserves_previous_reasons_and_adds_explicit() ->
 
 
 def test_merge_frozen_entities_accepts_explicit_without_previous_pool() -> None:
-    frozen = merge_frozen_entities(None, {"ENT_Z": "manual freeze"})
+    frozen = merge_frozen_entities(
+        None,
+        {
+            "ENT_Z": "manual freeze Z",
+            "ENT_A": "manual freeze A",
+        },
+    )
 
-    assert frozen == {"ENT_Z": "manual freeze"}
+    assert list(frozen) == ["ENT_Z", "ENT_A"]
+    assert frozen == {
+        "ENT_Z": "manual freeze Z",
+        "ENT_A": "manual freeze A",
+    }
 
 
 def test_ensure_frozen_entities_fit_capacity_rejects_overflow() -> None:
